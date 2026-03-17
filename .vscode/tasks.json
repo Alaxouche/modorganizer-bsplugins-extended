@@ -1,0 +1,17 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "CMake Configure and Build",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--preset",
+				"windows-2022"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}
