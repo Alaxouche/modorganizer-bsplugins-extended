@@ -48,6 +48,7 @@ public:
 
   void
   forEachRecord(std::function<void(const std::shared_ptr<const Record>&)> func) const;
+  void forEachRecord(std::function<void(const std::shared_ptr<Record>&)> func);
 
   std::shared_ptr<Record> createRecord(const RecordPath& path, const std::string& name,
                                        TESFile::Type formType);

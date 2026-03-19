@@ -15,7 +15,9 @@ QList<QString> ConflictIconDelegate::getIcons(const QModelIndex& index) const
 
   QList<QString> icons;
 
-  if ((flags & CONFLICT_MIXED) == CONFLICT_MIXED) {
+  if (flags & CONFLICT_REDUNDANT) {
+    icons.append(":/MO/gui/emblem_conflict_redundant");
+  } else if ((flags & CONFLICT_MIXED) == CONFLICT_MIXED) {
     icons.append(":/MO/gui/emblem_conflict_mixed");
   } else if (flags & CONFLICT_OVERRIDE) {
     icons.append(":/MO/gui/emblem_conflict_overwrite");
@@ -34,15 +36,9 @@ QList<QString> ConflictIconDelegate::getIcons(const QModelIndex& index) const
   return icons;
 }
 
-[[nodiscard]] static int numIcons(uint flags)
-{
-  return ((flags & CONFLICT_MIXED) ? 1 : 0) +
-         ((flags & CONFLICT_ARCHIVE_MIXED) ? 1 : 0);
-}
-
 int ConflictIconDelegate::getNumIcons(const QModelIndex& index) const
 {
-  return numIcons(m_View->conflictFlags(index));
+  return getIcons(index).size();
 }
 
 }  // namespace BSPluginList

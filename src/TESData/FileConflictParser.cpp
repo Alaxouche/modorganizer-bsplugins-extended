@@ -70,9 +70,10 @@ bool FileConflictParser::Form(TESFile::FormData form)
   default:
     m_CurrentPath.setFormId(form.formId(), m_Masters, m_PluginName);
 
-    const int localModIndex   = form.localModIndex();
-    const bool isMasterRecord = localModIndex < m_Masters.size();
-    return isMasterRecord;
+    // Parse all records (not only master records) so the conflict graph also
+    // includes plugin-owned records with no alternatives. This avoids marking a
+    // plugin as "totally overridden" when it still has unique records.
+    return true;
   }
 }
 

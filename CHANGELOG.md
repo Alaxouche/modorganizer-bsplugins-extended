@@ -4,6 +4,7 @@ Rework and recompilation of many functions of the base mo2 addon for more stabil
 basically most of what was done:
 - Improved stability and startup reliability for the plugin panel
 - Added safer and clearer group management tools
+- Added MO2 settings toggles to show/hide `Reset Group Structure` and `Clean Groups` controls
 - Added `Reset Groups` to clear group structure without changing load order
 - Added `Merge Group` to combine two groups in one action
 - Added `Clean Groups` to remove empty groups and a new prompt on right click "Remove Group..." 
@@ -15,4 +16,35 @@ basically most of what was done:
 - Added protection against unwanted external load order changes 
 - Added option to fully disable the group system
 - Restaured the "Lock Load Order Position" option for the plugins. Base Bsplugin.dll removed this option
+- Replaced double-click plugin details dialog with smart double-click behavior:
+  - Double-click a plugin → opens containing mod information (like vanilla MO2)
+  - Double-click a plugin's Notes column → edit notes inline
+  - Ctrl+Double-click a plugin → explore mod origin folder
+  - Double-click a group → expand/collapse
+- Right-click context menu now restores the original label "Open Plugin Info..." and only shows it for plugin rows (hidden for group rows)
+- Added white conflict lightning for plugins that are fully overwritten (redundant), matching MO2 mod behavior (toggleable sub-option of conflict management)
+- Added plugin notes support: annotate individual plugins with notes (edit via context menu or directly in the Notes column)
+- Persistent note storage in `pluginnotes.txt` profile file
+- Added persistent Ignore Record support in plugin info view (survives refresh/reload)
+  - New profile storage file: `pluginignoredrecords.txt`
+  - Ignore Record now saves immediately when toggled
+- Improved external LOOT interaction to reduce `plugingroups.txt` file lock conflicts on exit
+  - Closed read handle before SafeWrite update in LOOT group import path
+  - Deferred post-LOOT refresh path and skipped automatic post-run group writes
+  - Guarded auto-save writes while an external app is running/refreshing
+- Fixed occasional post-freeze/CTD plugin view desync where priorities/groups could display incorrectly
+  - Group proxy now performs a full model reset when source model resets
+  - Organizer refresh now always invalidates plugin data to avoid stale state if run-finished callback is missed
+- Improved refresh reliability when plugins are added/removed/moved in mod folders
+  - Prevents stale list state that previously required MO2 restart or mod re-toggle to reflect file changes
+- Added keyboard shortcuts for quick actions:
+  - Ctrl+Shift+S for Sort
+  - Ctrl+Shift+G for Clean Groups
+  - Ctrl+Alt+G for Reset Groups
+  - F2 to rename selected group
+  - Delete to remove selected group
+  - Ctrl+Shift+M to merge selected group
+- Build/config updates:
+  - Added workspace setting to default CMake build type to Release
+  - Restricted CMake preset configuration types to Release to avoid Debug/Release runtime mismatch
 - Compiled and compatible for Mod Organizer 2.5.2

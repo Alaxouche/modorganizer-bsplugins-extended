@@ -54,6 +54,7 @@ public:
   [[nodiscard]] int pluginCount() const;
 
   [[nodiscard]] const FileInfo* getPlugin(int index) const;
+  [[nodiscard]] FileInfo* getPlugin(int index);
   [[nodiscard]] const FileInfo* getPluginByName(const QString& name) const;
   [[nodiscard]] const FileInfo* getPluginByPriority(int priority) const;
   [[nodiscard]] int getIndex(const QString& pluginName) const;
@@ -154,14 +155,20 @@ private:
 
   [[nodiscard]] QString groupsPath() const;
   [[nodiscard]] QString lockedOrderPath() const;
+  [[nodiscard]] QString notesPath() const;
+  [[nodiscard]] QString ignoredRecordsPath() const;
   void clearGroups();
   void clearLockedOrder();
   void rememberGroup(const QString& group);
   void readGroups(const QString& fileName);
   void readLockedOrder(const QString& fileName);
+  void readNotes(const QString& fileName);
+  void readIgnoredRecords(const QString& fileName);
   void writeEmptyTextFile(const QString& fileName) const;
   void writeGroups(const QString& fileName) const;
   void writeLockedOrder(const QString& fileName) const;
+  void writeNotes(const QString& fileName) const;
+  void writeIgnoredRecords(const QString& fileName) const;
   [[nodiscard]] QString destinationGroup(
       int oldPriority, int newPriority, const QString& originalGroup, bool isESM,
       const boost::container::flat_set<QString, MOBase::FileNameComparator>&

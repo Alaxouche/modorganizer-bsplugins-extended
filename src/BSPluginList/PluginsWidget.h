@@ -66,7 +66,13 @@ private slots:
   void on_saveButton_clicked();
 
 private:
+  void updateGroupActionVisibility();
   void applyGroupingSetting();
+  void applyConflictManagementSetting();
+  [[nodiscard]] bool selectedSingleGroup(QString* groupName = nullptr) const;
+  void renameSelectedGroup();
+  void removeSelectedGroup();
+  void mergeSelectedGroup();
   [[nodiscard]] QMenu* listOptionsMenu();
   void saveState();
   void restoreState();
@@ -88,6 +94,8 @@ private:
   QMenu* optionsMenu           = nullptr;
   QAction* toggleForceEnabled  = nullptr;
   QAction* toggleIgnoreMasters = nullptr;
+  QAction* resetGroupsAction   = nullptr;
+  QAction* cleanGroupsAction   = nullptr;
 
   TESData::PluginList* m_PluginList       = nullptr;
   PluginListModel* m_PluginListModel      = nullptr;
@@ -100,6 +108,7 @@ private:
   bool m_DidUpdateMasterList   = false;
   bool m_OrganizerRefreshing   = false;
   bool m_IsRunningApp          = false;
+  bool m_DeferPostLootRefresh  = false;
   bool m_ExternalStatesChanged = false;
   QMetaObject::Connection m_ViewSelectionChangedConnection;
 };

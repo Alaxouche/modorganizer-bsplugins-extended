@@ -16,6 +16,10 @@
           "type": "STRING",
           "value": "Release"
         },
+        "CMAKE_CONFIGURATION_TYPES": {
+          "type": "STRING",
+          "value": "Release"
+        },
         "DEPENDENCIES_DIR": {
           "type": "PATH",
           "value": "${sourceDir}/.."

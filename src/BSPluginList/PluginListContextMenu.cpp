@@ -149,6 +149,40 @@ void PluginListContextMenu::addSelectedFilesActions()
       m_Model->lockPlugins(m_ModelSelected, true);
     });
   }
+
+  addSeparator();
+
+  if (m_FilesSelected && m_ModelSelected.length() == 1) {
+    addAction(tr("Add/Edit Note..."), [this]() {
+      const auto plugin =
+          m_ModelSelected.first().data(PluginListModel::InfoRole)
+              .value<const TESData::FileInfo*>();
+      if (!plugin)
+        return;
+
+      bool ok;
+      const QString note = QInputDialog::getMultiLineText(
+          m_View->topLevelWidget(), tr("Edit Plugin Note: ") + plugin->name(),
+          tr("Note:"), plugin->notes(), &ok);
+
+      if (ok) {
+        m_Model->setData(m_ModelSelected.first(), note, Qt::EditRole);
+      }
+    });
+  } else if (m_FilesSelected && m_ModelSelected.length() > 1) {
+    addAction(tr("Add/Edit Note (all)..."), [this]() {
+      bool ok;
+      const QString note = QInputDialog::getMultiLineText(
+          m_View->topLevelWidget(), tr("Edit Plugin Notes"),
+          tr("Note to add to all selected:"), "", &ok);
+
+      if (ok && !note.isEmpty()) {
+        for (const auto& idx : m_ModelSelected) {
+          m_Model->setData(idx, note, Qt::EditRole);
+        }
+      }
+    });
+  }
 }
 
 void PluginListContextMenu::addSelectedGroupActions()
@@ -339,10 +373,13 @@ void PluginListContextMenu::addOriginActions(MOBase::IModList* modList,
     }
   }
 
-  const auto pluginInfoAction = addAction("Open Plugin Info...", [this, nameIdx] {
-    emit openPluginInformation(nameIdx);
-  });
-  setDefaultAction(pluginInfoAction);
+  if (m_FilesSelected) {
+    const auto pluginInfoAction =
+        addAction(tr("Open Plugin Info..."), [this, nameIdx] {
+          emit openPluginInformation(nameIdx);
+        });
+    setDefaultAction(pluginInfoAction);
+  }
 }
 
 void PluginListContextMenu::sendSelectedToGroup()

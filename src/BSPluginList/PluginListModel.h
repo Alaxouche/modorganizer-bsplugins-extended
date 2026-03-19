@@ -40,6 +40,7 @@ public:
     COL_FLAGS,
     COL_PRIORITY,
     COL_MODINDEX,
+    COL_NOTES,
 
     COL_COUNT
   };

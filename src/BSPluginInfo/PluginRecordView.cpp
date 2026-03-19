@@ -205,6 +205,9 @@ void PluginRecordView::on_pickRecordView_customContextMenuRequested(const QPoint
         }
       }
     }
+
+    // Persist ignored records so refresh does not lose the tag.
+    m_PluginList->writePluginLists();
   });
 
   ignoreRecord->setCheckable(true);

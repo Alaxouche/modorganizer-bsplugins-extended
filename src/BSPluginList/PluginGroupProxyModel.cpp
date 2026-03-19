@@ -1,6 +1,7 @@
 #include "PluginGroupProxyModel.h"
 #include "PluginListDropInfo.h"
 #include "PluginListModel.h"
+#include "PluginSortFilterProxyModel.h"
 
 #include <QSortFilterProxyModel>
 
@@ -433,9 +434,9 @@ void PluginGroupProxyModel::onSourceLayoutChanged(
 
 void PluginGroupProxyModel::onSourceModelReset()
 {
-  emit layoutAboutToBeChanged();
+  beginResetModel();
   buildGroups();
-  emit layoutChanged();
+  endResetModel();
 }
 
 void PluginGroupProxyModel::onSourceRowsInserted(const QModelIndex& parent)
@@ -465,9 +466,11 @@ void PluginGroupProxyModel::buildGroups()
   m_TopLevel.clear();
   m_SourceMap.clear();
 
-  const auto sortProxy = qobject_cast<const QSortFilterProxyModel*>(sourceModel());
+    const auto genericSortProxy =
+      qobject_cast<const QSortFilterProxyModel*>(sourceModel());
   const bool sorted =
-      sortProxy && sortProxy->sortColumn() == PluginListModel::COL_PRIORITY;
+      genericSortProxy &&
+      genericSortProxy->sortColumn() == PluginListModel::COL_PRIORITY;
 
   int primaryDivider = -1;
   int masterDivider  = -1;
@@ -477,7 +480,7 @@ void PluginGroupProxyModel::buildGroups()
         idx.data(PluginListModel::InfoRole).value<const TESData::FileInfo*>();
 
     if (sorted && plugin) {
-      if (sortProxy->sortOrder() == Qt::AscendingOrder) {
+      if (genericSortProxy->sortOrder() == Qt::AscendingOrder) {
         if (plugin->forceLoaded()) {
           primaryDivider = i;
         } else if (plugin->isMasterFile()) {
@@ -496,6 +499,10 @@ void PluginGroupProxyModel::buildGroups()
 
   boost::container::flat_map<QString, int> groupRepeats;
   const auto baseModel = findBaseModel<PluginListModel>(sourceModel());
+    const auto pluginSortProxy =
+      qobject_cast<const PluginSortFilterProxyModel*>(sourceModel());
+    const bool hideEmptyGroupsForFilter =
+      pluginSortProxy && pluginSortProxy->hasActiveFilter();
   const QStringList knownGroups = baseModel ? baseModel->m_Plugins->knownGroups()
                                             : QStringList();
   boost::container::flat_set<QString> nonEmptyGroups;
@@ -523,7 +530,7 @@ void PluginGroupProxyModel::buildGroups()
         break;
       }
 
-      if (!nonEmptyGroups.contains(knownGroup)) {
+      if (!nonEmptyGroups.contains(knownGroup) && !hideEmptyGroupsForFilter) {
         appendTopLevelGroup(knownGroup);
       }
     }
@@ -570,10 +577,12 @@ void PluginGroupProxyModel::buildGroups()
   }
 
   appendPendingEmptyGroups(QString());
-  while (nextKnownGroup < knownGroups.size()) {
-    const auto& knownGroup = knownGroups.at(nextKnownGroup++);
-    if (!nonEmptyGroups.contains(knownGroup)) {
-      appendTopLevelGroup(knownGroup);
+  if (!hideEmptyGroupsForFilter) {
+    while (nextKnownGroup < knownGroups.size()) {
+      const auto& knownGroup = knownGroups.at(nextKnownGroup++);
+      if (!nonEmptyGroups.contains(knownGroup)) {
+        appendTopLevelGroup(knownGroup);
+      }
     }
   }
 

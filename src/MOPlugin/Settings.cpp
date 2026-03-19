@@ -108,6 +108,33 @@ bool Settings::enablePluginGrouping() const
       .value<bool>();
 }
 
+bool Settings::enableResetGroupsButton() const
+{
+  return Organizer->pluginSetting(BSPlugins::NAME, "enable_reset_groups_button")
+      .value<bool>();
+}
+
+bool Settings::enableCleanGroupsButton() const
+{
+  return Organizer->pluginSetting(BSPlugins::NAME, "enable_clean_groups_button")
+      .value<bool>();
+}
+
+bool Settings::enablePluginConflictManagement() const
+{
+  return Organizer
+      ->pluginSetting(BSPlugins::NAME, "enable_plugin_conflict_management")
+      .value<bool>();
+}
+
+bool Settings::enablePluginRedundantConflicts() const
+{
+  return enablePluginConflictManagement() &&
+         Organizer->pluginSetting(BSPlugins::NAME,
+                                  "enable_plugin_redundant_conflicts")
+             .value<bool>();
+}
+
 bool Settings::confirmMassOperations() const
 {
   return Organizer->pluginSetting(BSPlugins::NAME, "confirm_mass_operations")

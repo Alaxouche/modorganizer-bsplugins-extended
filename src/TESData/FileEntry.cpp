@@ -30,6 +30,24 @@ void FileEntry::forEachRecord(
   }
 }
 
+void FileEntry::forEachRecord(std::function<void(const std::shared_ptr<Record>&)> func)
+{
+  std::vector<std::shared_ptr<TreeItem>> stack;
+  stack.push_back(m_Root);
+  while (!stack.empty()) {
+    const auto item = std::move(stack.back());
+    stack.pop_back();
+
+    if (item->record) {
+      func(item->record);
+    }
+
+    for (const auto& [identifier, child] : item->children) {
+      stack.push_back(child);
+    }
+  }
+}
+
 std::shared_ptr<Record> FileEntry::createRecord(const RecordPath& path,
                                                 const std::string& name,
                                                 TESFile::Type formType)

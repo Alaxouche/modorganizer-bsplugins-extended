@@ -45,7 +45,7 @@ Qt::ItemFlags PluginListModel::flags(const QModelIndex& index) const
   if (index.isValid()) {
     const auto plugin = m_Plugins->getPlugin(id);
     if (plugin && (!plugin->forceLoaded() && !plugin->forceDisabled())) {
-      if (index.column() == COL_PRIORITY)
+      if (index.column() == COL_PRIORITY || index.column() == COL_NOTES)
         result |= Qt::ItemIsEditable;
       result |= Qt::ItemIsUserCheckable;
     }
@@ -110,6 +110,9 @@ QVariant PluginListModel::data(const QModelIndex& index, int role) const
     return QVariant::fromValue(plugin);
   }
   case ConflictsIconRole:
+    if (!Settings::instance()->enablePluginConflictManagement()) {
+      return QVariant::fromValue(0u);
+    }
     return conflictData(index);
   case FlagsIconRole:
     return iconData(index);
@@ -118,22 +121,34 @@ QVariant PluginListModel::data(const QModelIndex& index, int role) const
     return m_Plugins->getOriginName(id);
   }
   case OverridingRole: {
+    if (!Settings::instance()->enablePluginConflictManagement()) {
+      return QVariantList();
+    }
     const int id      = index.row();
     const auto plugin = m_Plugins->getPlugin(id);
     return conflictListData(m_Plugins, plugin, &TESData::FileInfo::getPluginOverriding);
   }
   case OverriddenRole: {
+    if (!Settings::instance()->enablePluginConflictManagement()) {
+      return QVariantList();
+    }
     const int id      = index.row();
     const auto plugin = m_Plugins->getPlugin(id);
     return conflictListData(m_Plugins, plugin, &TESData::FileInfo::getPluginOverridden);
   }
   case OverwritingAuxRole: {
+    if (!Settings::instance()->enablePluginConflictManagement()) {
+      return QVariantList();
+    }
     const int id      = index.row();
     const auto plugin = m_Plugins->getPlugin(id);
     return conflictListData(m_Plugins, plugin,
                             &TESData::FileInfo::getPluginOverwritingArchive);
   }
   case OverwrittenAuxRole: {
+    if (!Settings::instance()->enablePluginConflictManagement()) {
+      return QVariantList();
+    }
     const int id      = index.row();
     const auto plugin = m_Plugins->getPlugin(id);
     return conflictListData(m_Plugins, plugin,
@@ -159,6 +174,8 @@ QVariant PluginListModel::displayData(const QModelIndex& index) const
     return plugin->priority();
   case COL_MODINDEX:
     return plugin->index();
+  case COL_NOTES:
+    return plugin->notes();
   default:
     return QVariant();
   }
@@ -392,7 +409,9 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
     using enum TESData::FileInfo::EConflictFlag;
 
     QString toolTip;
-    if ((conflictFlags & CONFLICT_MIXED) == CONFLICT_MIXED) {
+    if (conflictFlags & CONFLICT_REDUNDANT) {
+      toolTip += tr("Totally overwritten records (redundant)");
+    } else if ((conflictFlags & CONFLICT_MIXED) == CONFLICT_MIXED) {
       toolTip += tr("Overrides & has overridden records");
     } else if (conflictFlags & CONFLICT_OVERRIDE) {
       toolTip += tr("Overrides records");
@@ -489,6 +508,10 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
 
 QVariant PluginListModel::conflictData(const QModelIndex& index) const
 {
+  if (!Settings::instance()->enablePluginConflictManagement()) {
+    return QVariant::fromValue(0u);
+  }
+
   const int id      = index.row();
   if (m_ConflictCache.contains(id)) {
     return m_ConflictCache.value(id);
@@ -599,6 +622,8 @@ QVariant PluginListModel::headerData(int section, Qt::Orientation orientation,
         return tr("Priority");
       case COL_MODINDEX:
         return tr("Mod Index");
+      case COL_NOTES:
+        return tr("Notes");
       default:
         return tr("unknown");
       }
@@ -642,6 +667,14 @@ bool PluginListModel::setData(const QModelIndex& index, const QVariant& value, i
                          this->index(rowCount() - 1, columnCount() - 1),
                          {Qt::EditRole, GroupingRole});
         emit pluginOrderChanged();
+        return true;
+      }
+    } else if (index.column() == COL_NOTES) {
+      const int id = index.row();
+      const auto plugin = m_Plugins->getPlugin(id);
+      if (plugin) {
+        plugin->setNotes(value.toString());
+        emit dataChanged(index, index, {Qt::EditRole, Qt::DisplayRole});
         return true;
       }
     }
@@ -764,6 +797,14 @@ void PluginListModel::invalidate()
 
 void PluginListModel::invalidateConflicts()
 {
+  if (!Settings::instance()->enablePluginConflictManagement()) {
+    m_ConflictCache.clear();
+    m_TooltipCache.clear();
+    emit dataChanged(index(0, COL_CONFLICTS), index(rowCount() - 1, COL_CONFLICTS),
+                     {PluginListModel::ConflictsIconRole});
+    return;
+  }
+
   m_ConflictCache.clear();
   m_TooltipCache.clear();
 

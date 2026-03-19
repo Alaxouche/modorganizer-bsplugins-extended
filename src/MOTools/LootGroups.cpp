@@ -102,6 +102,9 @@ static void writeGroups(const QString& plugingroups, std::map<QString, QString>&
         knownGroups.append(fields[1]);
       }
     }
+
+    // Ensure the read handle is released before creating the safe-write file.
+    existingFile.close();
   }
 
   MOBase::SafeWriteFile file{plugingroups};

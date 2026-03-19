@@ -1,6 +1,7 @@
 #include "PluginsWidget.h"
 
 #include "BSPluginInfo/PluginInfoDialog.h"
+#include "GUI/ListDialog.h"
 #include "GUI/MessageDialog.h"
 #include "GUI/SelectionDialog.h"
 #include "MOPlugin/Settings.h"
@@ -16,9 +17,12 @@
 
 #include <QApplication>
 #include <QCryptographicHash>
+#include <QInputDialog>
 #include <QMenu>
 #include <QMessageBox>
+#include <QShortcut>
 #include <QStandardPaths>
+#include <QTimer>
 
 using namespace Qt::Literals::StringLiterals;
 
@@ -45,8 +49,41 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
   ui->listOptionsBtn->setMenu(optionsMenu);
 
   ui->sortButton->setVisible(Settings::instance()->enableSortButton());
-  ui->resetGroupsButton->setVisible(Settings::instance()->enablePluginGrouping());
-  ui->cleanGroupsButton->setVisible(Settings::instance()->enablePluginGrouping());
+  updateGroupActionVisibility();
+
+    auto* const sortShortcut = new QShortcut(QKeySequence(tr("Ctrl+Shift+S")), this);
+    sortShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(sortShortcut, &QShortcut::activated, this,
+      &PluginsWidget::on_sortButton_clicked);
+
+    auto* const cleanShortcut =
+        new QShortcut(QKeySequence(tr("Ctrl+Shift+G")), this);
+    cleanShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(cleanShortcut, &QShortcut::activated, this,
+      &PluginsWidget::on_cleanGroupsButton_clicked);
+
+    auto* const resetShortcut =
+        new QShortcut(QKeySequence(tr("Ctrl+Alt+G")), this);
+    resetShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(resetShortcut, &QShortcut::activated, this,
+      &PluginsWidget::on_resetGroupsButton_clicked);
+
+    auto* const renameGroupShortcut = new QShortcut(QKeySequence(Qt::Key_F2), this);
+    renameGroupShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(renameGroupShortcut, &QShortcut::activated, this,
+      &PluginsWidget::renameSelectedGroup);
+
+    auto* const removeGroupShortcut =
+        new QShortcut(QKeySequence::Delete, ui->pluginList);
+    removeGroupShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(removeGroupShortcut, &QShortcut::activated, this,
+      &PluginsWidget::removeSelectedGroup);
+
+    auto* const mergeGroupShortcut =
+        new QShortcut(QKeySequence(tr("Ctrl+Shift+M")), this);
+    mergeGroupShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(mergeGroupShortcut, &QShortcut::activated, this,
+      &PluginsWidget::mergeSelectedGroup);
 
   if (Settings::instance()->autoCleanGroupSeparatorsOnStartup()) {
     m_PluginListModel->cleanEmptyGroups();
@@ -69,6 +106,16 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
 
   connect(m_PluginListModel, &PluginListModel::pluginStatesChanged, this,
           &PluginsWidget::updatePluginCount);
+
+  connect(m_PluginListModel, &QAbstractItemModel::dataChanged, this,
+          [this](const QModelIndex&, const QModelIndex&, const QList<int>&) {
+            if (m_IsRunningApp || m_PluginList->isRefreshing()) {
+              return;
+            }
+
+            // Persist notes and other data when cells are edited
+            m_PluginList->writePluginLists();
+          });
 
   connect(m_GroupProxy, &QAbstractItemModel::modelReset, [this]() {
     ui->pluginList->scrollToTop();
@@ -274,6 +321,14 @@ void PluginsWidget::onSelectionChanged()
 
 void PluginsWidget::onPanelActivated()
 {
+  if (m_DeferPostLootRefresh) {
+    m_DeferPostLootRefresh = false;
+    QTimer::singleShot(1000, this, [this]() {
+      m_PluginListModel->refresh();
+    });
+    return;
+  }
+
   m_PluginListModel->refresh();
 }
 
@@ -293,6 +348,10 @@ void PluginsWidget::toggleHideForceEnabled()
 
 void PluginsWidget::toggleIgnoreMasterConflicts()
 {
+  if (!Settings::instance()->enablePluginConflictManagement()) {
+    return;
+  }
+
   const bool doIgnore = toggleIgnoreMasters->isChecked();
   Settings::instance()->set("ignore_master_conflicts", doIgnore);
 
@@ -374,11 +433,20 @@ void PluginsWidget::on_pluginList_customContextMenuRequested(const QPoint& pos)
 
 void PluginsWidget::on_pluginList_doubleClicked(const QModelIndex& index)
 {
+  const int column = index.column();
+  
+  // Allow double-click to edit Notes column
+  if (column == PluginListModel::COL_NOTES) {
+    ui->pluginList->edit(index);
+    return;
+  }
+  
   bool ok;
   const int id = index.data(PluginListModel::IndexRole).toInt(&ok);
   if (ok) {
     Qt::KeyboardModifiers modifiers = QApplication::queryKeyboardModifiers();
     if (modifiers.testFlag(Qt::ControlModifier)) {
+      // Ctrl+Double-clic: explore origin folder
       const auto origin  = m_PluginList->getOriginName(id);
       const auto modInfo = m_Organizer->modList()->getMod(origin);
 
@@ -386,9 +454,14 @@ void PluginsWidget::on_pluginList_doubleClicked(const QModelIndex& index)
         MOBase::shell::Explore(modInfo->absolutePath());
       }
     } else {
-      displayPluginInformation(index);
+      // Double-clic normal sur un plugin: open mod information
+      const auto plugin = m_PluginList->getPlugin(id);
+      if (plugin) {
+        m_PanelInterface->displayOriginInformation(plugin->name());
+      }
     }
   } else if (ui->pluginList->model()->hasChildren(index)) {
+    // Double-clic sur un groupe: développe/réduit
     ui->pluginList->setExpanded(index, !ui->pluginList->isExpanded(index));
   }
 }
@@ -447,6 +520,11 @@ void PluginsWidget::on_sortButton_clicked()
 
 void PluginsWidget::on_resetGroupsButton_clicked()
 {
+  if (!Settings::instance()->enablePluginGrouping() ||
+      !Settings::instance()->enableResetGroupsButton()) {
+    return;
+  }
+
   if (!confirmMassOperation(
           tr("Reset all groups and separators? Plugin load order will stay unchanged."))) {
     return;
@@ -457,6 +535,11 @@ void PluginsWidget::on_resetGroupsButton_clicked()
 
 void PluginsWidget::on_cleanGroupsButton_clicked()
 {
+  if (!Settings::instance()->enablePluginGrouping() ||
+      !Settings::instance()->enableCleanGroupsButton()) {
+    return;
+  }
+
   m_PluginListModel->cleanEmptyGroups();
 }
 
@@ -576,15 +659,17 @@ QMenu* PluginsWidget::listOptionsMenu()
   });
 
   menu->addSeparator();
-  menu->addAction(tr("Reset Group Structure"), [this]() {
+  resetGroupsAction = menu->addAction(tr("Reset Group Structure"), [this]() {
     if (confirmMassOperation(tr(
             "Reset all groups and separators? Plugin load order will stay unchanged."))) {
       m_PluginListModel->resetGroupsStructure();
     }
   });
-  menu->addAction(tr("Clean Groups"), [this]() {
+  cleanGroupsAction = menu->addAction(tr("Clean Groups"), [this]() {
     m_PluginListModel->cleanEmptyGroups();
   });
+
+  updateGroupActionVisibility();
 
   return menu;
 }
@@ -615,6 +700,8 @@ void PluginsWidget::restoreState()
   const bool doIgnore = settings->get<bool>("ignore_master_conflicts", false);
   toggleIgnoreMasters->setChecked(doIgnore);
   toggleIgnoreMasterConflicts();
+
+  applyConflictManagementSetting();
 }
 
 static bool containsPlugin(const MOBase::IModInterface* mod)
@@ -693,11 +780,35 @@ void PluginsWidget::onFinishedRun(const QString& binary,
     return;
   }
 
+  const bool isLootGui =
+      binaryName.compare("Loot.exe", Qt::CaseInsensitive) == 0;
+
+  if (isLootGui) {
+    const auto profilePath = QDir(m_Organizer->profilePath());
+    const auto pluginsName =
+        QDir::cleanPath(profilePath.absoluteFilePath("plugins.txt"));
+    const auto loadOrderName =
+        QDir::cleanPath(profilePath.absoluteFilePath("loadorder.txt"));
+    const auto lockedOrderName =
+        QDir::cleanPath(profilePath.absoluteFilePath("lockedorder.txt"));
+    const auto parent = this->topLevelWidget();
+
+    MOBase::shellDeleteQuiet(pluginsName + ".snapshot", parent);
+    MOBase::shellDeleteQuiet(loadOrderName + ".snapshot", parent);
+    MOBase::shellDeleteQuiet(lockedOrderName + ".snapshot", parent);
+
+    m_DeferPostLootRefresh = true;
+    m_IsRunningApp         = false;
+    m_ExternalStatesChanged = false;
+    return;
+  }
+
   // queue up behind the vanilla callbacks which might not have run yet, so we can react
   // after loadorder.txt changes
   m_Organizer->onNextRefresh([=, this]() {
     m_PluginList->refresh();
     checkLoadOrderChanged(binaryName);
+
     m_IsRunningApp          = false;
     m_ExternalStatesChanged = false;
   });
@@ -711,9 +822,49 @@ void PluginsWidget::onSettingChanged(const QString& key,
     ui->sortButton->setVisible(newValue.value<bool>());
   } else if (key == u"enable_plugin_grouping"_s) {
     applyGroupingSetting();
-    ui->resetGroupsButton->setVisible(newValue.value<bool>());
-    ui->cleanGroupsButton->setVisible(newValue.value<bool>());
+    updateGroupActionVisibility();
+  } else if (key == u"enable_reset_groups_button"_s ||
+             key == u"enable_clean_groups_button"_s) {
+    updateGroupActionVisibility();
+  } else if (key == u"enable_plugin_conflict_management"_s) {
+    applyConflictManagementSetting();
   }
+}
+
+void PluginsWidget::updateGroupActionVisibility()
+{
+  const auto* const settings = Settings::instance();
+  const bool groupingEnabled = settings->enablePluginGrouping();
+  const bool showReset = groupingEnabled && settings->enableResetGroupsButton();
+  const bool showClean = groupingEnabled && settings->enableCleanGroupsButton();
+
+  ui->resetGroupsButton->setVisible(showReset);
+  ui->cleanGroupsButton->setVisible(showClean);
+
+  if (resetGroupsAction) {
+    resetGroupsAction->setVisible(showReset);
+  }
+
+  if (cleanGroupsAction) {
+    cleanGroupsAction->setVisible(showClean);
+  }
+}
+
+void PluginsWidget::applyConflictManagementSetting()
+{
+  const bool enabled = Settings::instance()->enablePluginConflictManagement();
+
+  ui->pluginList->setColumnHidden(PluginListModel::COL_CONFLICTS, !enabled);
+
+  if (toggleIgnoreMasters) {
+    toggleIgnoreMasters->setEnabled(enabled);
+    if (!enabled) {
+      toggleIgnoreMasters->setChecked(false);
+    }
+  }
+
+  m_PluginListModel->invalidateConflicts();
+  ui->pluginList->updateOverwriteMarkers();
 }
 
 bool PluginsWidget::confirmMassOperation(const QString& text) const
@@ -725,6 +876,89 @@ bool PluginsWidget::confirmMassOperation(const QString& text) const
   return QMessageBox::question(topLevelWidget(), tr("Confirm"), text,
                                QMessageBox::Yes | QMessageBox::No) ==
          QMessageBox::Yes;
+}
+
+bool PluginsWidget::selectedSingleGroup(QString* groupName) const
+{
+  if (!Settings::instance()->enablePluginGrouping()) {
+    return false;
+  }
+
+  const auto selected = ui->pluginList->selectionModel()->selectedRows();
+  if (selected.size() != 1) {
+    return false;
+  }
+
+  const auto idx = selected.first();
+  if (!idx.isValid() || !idx.model()->hasChildren(idx)) {
+    return false;
+  }
+
+  if (groupName) {
+    *groupName = idx.data().toString();
+  }
+
+  return true;
+}
+
+void PluginsWidget::renameSelectedGroup()
+{
+  QString oldGroup;
+  if (!selectedSingleGroup(&oldGroup)) {
+    return;
+  }
+
+  bool ok = false;
+  const QString group = QInputDialog::getText(topLevelWidget(), tr("Rename Group..."),
+                                              tr("Please enter a name:"),
+                                              QLineEdit::Normal, oldGroup, &ok);
+
+  if (!ok || group.isEmpty() || group == oldGroup) {
+    return;
+  }
+
+  m_PluginListModel->renameGroup(oldGroup, group);
+}
+
+void PluginsWidget::removeSelectedGroup()
+{
+  QString group;
+  if (!selectedSingleGroup(&group)) {
+    return;
+  }
+
+  if (!confirmMassOperation(
+          tr("Are you sure you want to remove \"%1\"?").arg(group))) {
+    return;
+  }
+
+  m_PluginListModel->removeGroup(group);
+}
+
+void PluginsWidget::mergeSelectedGroup()
+{
+  QString fromGroup;
+  if (!selectedSingleGroup(&fromGroup)) {
+    return;
+  }
+
+  GUI::ListDialog dialog{*Settings::instance(), topLevelWidget()};
+  dialog.setWindowTitle(tr("Merge Group Into..."));
+
+  QStringList choices = m_PluginListModel->groups();
+  choices.removeAll(fromGroup);
+  dialog.setChoices(choices);
+
+  if (dialog.exec() != QDialog::Accepted) {
+    return;
+  }
+
+  const QString toGroup = dialog.getChoice();
+  if (toGroup.isEmpty()) {
+    return;
+  }
+
+  m_PluginListModel->mergeGroup(fromGroup, toGroup);
 }
 
 void PluginsWidget::applyGroupingSetting()
@@ -789,9 +1023,7 @@ void PluginsWidget::checkLoadOrderChanged(const QString& binaryName)
                                 hashFile(loadOrderName) != hashFile(loadOrderSnapshot);
 
   if (loadOrderChanged) {
-    if (binaryName.compare("Loot.exe", Qt::CaseInsensitive) == 0) {
-      importLootGroups();
-    } else {
+    if (binaryName.compare("Loot.exe", Qt::CaseInsensitive) != 0) {
       // When warning is enabled, ask the user whether to keep game changes.
       // When warning is disabled, always silently restore the snapshot.
       bool shouldRestore = true;
@@ -855,12 +1087,11 @@ void PluginsWidget::synchronizePluginLists(MOBase::IOrganizer* organizer)
   std::function<void()> startRefresh = [this] {
     m_OrganizerRefreshing = true;
     m_PluginList->flushPendingStates();
-    // if we just finished running an application, we want the vanilla plugin list to
-    // finish reading and rewriting the load order files so that we don't end up
-    // ignoring the change
-    if (!m_IsRunningApp) {
-      m_PluginListModel->invalidate();
-    }
+
+    // Always invalidate on organizer refresh. If a run-finished callback was missed
+    // (e.g. freeze/CTD edge cases), m_IsRunningApp can stay true and previously blocked
+    // updates indefinitely, causing stale priorities/groups in the view.
+    m_PluginListModel->invalidate();
   };
 
   organizer->onNextRefresh(startRefresh, false);

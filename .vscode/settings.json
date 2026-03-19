@@ -1,0 +1,8 @@
+{
+  "cmake.buildType": "Release",
+  "cmake.defaultVariants": {
+    "buildType": {
+      "default": "release"
+    }
+  }
+}

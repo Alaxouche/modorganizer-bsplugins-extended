@@ -23,8 +23,9 @@ public:
     CONFLICT_NONE                = 0x0,
     CONFLICT_OVERRIDE            = 0x1,
     CONFLICT_OVERRIDDEN          = 0x2,
-    CONFLICT_ARCHIVE_OVERWRITE   = 0x4,
-    CONFLICT_ARCHIVE_OVERWRITTEN = 0x8,
+    CONFLICT_REDUNDANT           = 0x4,
+    CONFLICT_ARCHIVE_OVERWRITE   = 0x8,
+    CONFLICT_ARCHIVE_OVERWRITTEN = 0x10,
 
     CONFLICT_MIXED         = CONFLICT_OVERRIDE | CONFLICT_OVERRIDDEN,
     CONFLICT_ARCHIVE_MIXED = CONFLICT_ARCHIVE_OVERWRITE | CONFLICT_ARCHIVE_OVERWRITTEN,
@@ -80,6 +81,7 @@ public:
     QString index;
     int loadOrder;
     QString group;
+    QString notes;
     bool lockedOrder = false;
 
     bool operator<(const State& other) const { return (loadOrder < other.loadOrder); }
@@ -162,6 +164,8 @@ public:
   void setLoadOrder(int loadOrder) { m_State.loadOrder = loadOrder; }
   [[nodiscard]] const QString& group() const { return m_State.group; }
   void setGroup(const QString& group) { m_State.group = group; }
+  [[nodiscard]] const QString& notes() const { return m_State.notes; }
+  void setNotes(const QString& notes) { m_State.notes = notes; }
   [[nodiscard]] bool lockedOrder() const { return m_State.lockedOrder; }
   void setLockedOrder(bool locked) { m_State.lockedOrder = locked; }
 

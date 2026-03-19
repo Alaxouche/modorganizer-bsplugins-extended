@@ -73,7 +73,9 @@ bool FileInfo::mustLoadAfter(const FileInfo& other) const
 
 static void checkConflict(QSet<int>& winning, QSet<int>& losing, const FileInfo& file,
                           const TESData::PluginList* pluginList,
-                          TESFileHandle alternative, bool ignoreMasters)
+                          TESFileHandle alternative, bool ignoreMasters,
+                          bool* hasWinningConflict = nullptr,
+                          bool* hasLosingConflict  = nullptr)
 {
   const auto entry      = pluginList->findEntryByName(file.name().toStdString());
   const auto otherEntry = pluginList->findEntryByHandle(alternative);
@@ -94,11 +96,17 @@ static void checkConflict(QSet<int>& winning, QSet<int>& losing, const FileInfo&
     if (!ignoreMasters ||
         !file.masters().contains(otherFile->name(), Qt::CaseInsensitive)) {
       winning.insert(otherIndex);
+      if (hasWinningConflict) {
+        *hasWinningConflict = true;
+      }
     }
   } else {
     if (!ignoreMasters ||
         !otherFile->masters().contains(file.name(), Qt::CaseInsensitive)) {
       losing.insert(otherIndex);
+      if (hasLosingConflict) {
+        *hasLosingConflict = true;
+      }
     }
   }
 }
@@ -115,13 +123,27 @@ FileInfo::Conflicts FileInfo::doConflictCheck() const
   const bool ignoreMasters =
       Settings::instance()->get<bool>("ignore_master_conflicts", false);
 
+  int checkedRecords      = 0;
+  bool allRecordsLosing   = true;
+
   entry->forEachRecord([&](auto&& record) {
     if (record->ignored())
       return;
 
+    ++checkedRecords;
+    bool recordHasWinningConflict = false;
+    bool recordHasLosingConflict  = false;
+
     for (const auto alternative : record->alternatives()) {
       checkConflict(conflicts.m_OverridingList, conflicts.m_OverriddenList, *this,
-                    m_PluginList, alternative, ignoreMasters);
+                    m_PluginList, alternative, ignoreMasters,
+                    &recordHasWinningConflict, &recordHasLosingConflict);
+    }
+
+    // A plugin is redundant if all of its non-ignored records are overridden by
+    // a higher-priority plugin (mirrors MO2 white lightning behavior).
+    if (!recordHasLosingConflict) {
+      allRecordsLosing = false;
     }
   });
 
@@ -146,6 +168,21 @@ FileInfo::Conflicts FileInfo::doConflictCheck() const
   }
   if (!conflicts.m_OverriddenList.empty()) {
     conflictState |= CONFLICT_OVERRIDDEN;
+  }
+    const bool hasAnyLosingConflict =
+      !conflicts.m_OverriddenList.empty() ||
+      !conflicts.m_OverwrittenArchiveList.empty();
+    const bool hasAnyWinningConflict =
+      !conflicts.m_OverridingList.empty() ||
+      !conflicts.m_OverwritingArchiveList.empty();
+
+    // Be conservative to avoid false positives:
+    // only mark redundant when every checked record is losing AND the plugin has
+    // no winning conflicts at all.
+    if (Settings::instance()->enablePluginRedundantConflicts() &&
+      checkedRecords > 0 && allRecordsLosing && hasAnyLosingConflict &&
+      !hasAnyWinningConflict) {
+    conflictState |= CONFLICT_REDUNDANT;
   }
   if (!conflicts.m_OverwritingArchiveList.empty()) {
     conflictState |= CONFLICT_ARCHIVE_OVERWRITE;

@@ -14,6 +14,7 @@ public:
   void hideForceEnabledFiles(bool doHide);
 
   [[nodiscard]] bool filterMatchesPlugin(const QString& plugin) const;
+  [[nodiscard]] bool hasActiveFilter() const { return !m_CurrentFilter.isEmpty(); }
 
   bool canDropMimeData(const QMimeData* data, Qt::DropAction action, int row,
                        int column, const QModelIndex& parent) const override;

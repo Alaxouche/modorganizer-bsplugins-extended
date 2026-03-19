@@ -132,7 +132,7 @@
     <message>
         <location filename="BSPluginList/PluginListContextMenu.cpp" line="102"/>
         <location filename="BSPluginList/PluginListContextMenu.cpp" line="108"/>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="250"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="284"/>
         <source>Confirm</source>
         <translation type="unfinished"></translation>
     </message>
@@ -162,76 +162,106 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="227"/>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="229"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="156"/>
+        <source>Add/Edit Note...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="165"/>
+        <source>Edit Plugin Note: </source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="166"/>
+        <source>Note:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="173"/>
+        <source>Add/Edit Note (all)...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="176"/>
+        <source>Edit Plugin Notes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="177"/>
+        <source>Note to add to all selected:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="261"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="263"/>
         <source>Merge Group Into...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="265"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="299"/>
         <source>Send to... </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="266"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="300"/>
         <source>Top</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="272"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="306"/>
         <source>Bottom</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="278"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="312"/>
         <source>Priority...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="283"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="317"/>
         <source>Set Priority</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="284"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="318"/>
         <source>Set the priority of the selected plugins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="329"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="363"/>
         <source>Open Origin in Explorer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="336"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="370"/>
         <source>Open Origin Info...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="182"/>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="185"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="216"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="219"/>
         <source>Create Group...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="186"/>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="218"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="220"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="252"/>
         <source>Please enter a name:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="212"/>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="218"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="246"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="252"/>
         <source>Rename Group...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="248"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="282"/>
         <source>Remove Group...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="251"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="285"/>
         <source>Are you sure you want to remove &quot;%1&quot;?</source>
         <translation type="unfinished"></translation>
     </message>
@@ -251,17 +281,23 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="163"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="197"/>
         <source>Collapse others</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="293"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="327"/>
         <source>Group...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListContextMenu.cpp" line="351"/>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="378"/>
+        <source>Open Plugin Info...</source>
+        <oldsource>Plugin&apos;s Details</oldsource>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginListContextMenu.cpp" line="388"/>
         <source>Select a group...</source>
         <translation type="unfinished"></translation>
     </message>
@@ -269,143 +305,153 @@
 <context>
     <name>BSPluginList::PluginListModel</name>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="326"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="343"/>
         <source>Origin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="330"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="347"/>
         <source>This plugin can&apos;t be disabled or moved (enforced by the game).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="334"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="351"/>
         <source>This plugin can&apos;t be disabled (enforced by the game).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="339"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="356"/>
         <source>Author</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="343"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="360"/>
         <source>Description</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="348"/>
-        <location filename="BSPluginList/PluginListModel.cpp" line="423"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="365"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="442"/>
         <source>Missing Masters</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="362"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="379"/>
         <source>Enabled Masters</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="373"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="390"/>
         <source>Loads Archives</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="439"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="458"/>
         <source>There are Archives connected to this plugin. Their assets will be added to your game, overwriting in case of conflicts following the plugin order. Loose files will always overwrite assets from Archives.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="377"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="394"/>
         <source>Loads INI settings</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="432"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="451"/>
         <source>There is an ini file connected to this plugin. Its settings will be added to your game settings, overwriting in case of conflicts.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="459"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="478"/>
         <source>This plugin is flagged as an overlay plugin. It contains only modified records and will overlay those changes onto the existing records in memory. It takes no memory space.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="383"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="400"/>
         <source>This is a dummy plugin. It contains no records and is typically used to load a paired archive file.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="466"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="485"/>
         <source>This game does not currently permit custom plugin loading. There may be manual workarounds.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="396"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="415"/>
         <source>Overrides &amp; has overridden records</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="398"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="417"/>
         <source>Overrides records</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="400"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="419"/>
         <source>Has overridden records</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="453"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="472"/>
         <source>This file is flagged as an ESL. It will adhere to its position in the load order but the records will be loaded in ESL space.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="408"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="427"/>
         <source>Overwrites &amp; has overwritten archive files</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="410"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="413"/>
+        <source>Totally overwritten records (redundant)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginListModel.cpp" line="429"/>
         <source>Overwrites another archive file</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="412"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="431"/>
         <source>Overwritten by another archive file</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="593"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="616"/>
         <source>Name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="595"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="618"/>
         <source>Conflicts</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="597"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="620"/>
         <source>Flags</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="599"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="622"/>
         <source>Priority</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="601"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="624"/>
         <source>Mod Index</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="603"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="626"/>
+        <source>Notes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginListModel.cpp" line="628"/>
         <source>unknown</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="447"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="466"/>
         <source>This file is flagged as an ESM. It will load before any non-ESM files in the load order.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -413,153 +459,193 @@
 <context>
     <name>BSPluginList::PluginsWidget</name>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="170"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="217"/>
         <source>Type</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="171"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="218"/>
         <source>Active</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="172"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="219"/>
         <source>Total</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="177"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="224"/>
         <source>All plugins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="178"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="225"/>
         <source>ESMs</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="179"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="226"/>
         <source>ESPs</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="180"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="227"/>
         <source>ESMs+ESPs</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="184"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="231"/>
         <source>ESLs</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="186"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="233"/>
         <source>Overlay</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="417"/>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="424"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="490"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="497"/>
         <source>Sorting plugins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="418"/>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="425"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="491"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="498"/>
         <source>Are you sure you want to sort your plugins list?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="420"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="493"/>
         <source>Note: You are currently in offline mode and LOOT will not update the master list.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="451"/>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="580"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="529"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="663"/>
         <source>Reset all groups and separators? Plugin load order will stay unchanged.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="493"/>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="814"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="576"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="1046"/>
         <source>Restore failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="494"/>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="815"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="577"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="1047"/>
         <source>Failed to restore the backup. Errorcode: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="539"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="622"/>
         <source>Backup of load order created</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="546"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="629"/>
         <source>Hide force-enabled files</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="556"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="639"/>
         <source>Collapse all</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="560"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="643"/>
         <source>Expand all</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="567"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="650"/>
         <source>Enable all</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="579"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="662"/>
         <source>Reset Group Structure</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="585"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="668"/>
         <source>Clean Groups</source>
         <oldsource>Clean Empty Group Separators</oldsource>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="725"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="876"/>
         <source>Confirm</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="568"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="651"/>
         <source>Really enable all plugins?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="572"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="54"/>
+        <source>Ctrl+Shift+S</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="60"/>
+        <source>Ctrl+Shift+G</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="66"/>
+        <source>Ctrl+Alt+G</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="83"/>
+        <source>Ctrl+Shift+M</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="655"/>
         <source>Disable all</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="573"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="656"/>
         <source>Really disable all plugins?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="800"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="912"/>
+        <source>Rename Group...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="913"/>
+        <source>Please enter a name:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="931"/>
+        <source>Are you sure you want to remove &quot;%1&quot;?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="946"/>
+        <source>Merge Group Into...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="1032"/>
         <source>Load Order Changed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="801"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="1033"/>
         <source>%1 has modified the load order. Do you want to apply these changes?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="550"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="633"/>
         <source>Ignore conflicts with masters</source>
         <translation type="unfinished"></translation>
     </message>
@@ -572,7 +658,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="MOPlugin/BSPlugins.cpp" line="80"/>
+        <location filename="MOPlugin/BSPlugins.cpp" line="89"/>
         <source>Plugins</source>
         <translation type="unfinished"></translation>
     </message>
@@ -875,34 +961,34 @@
 <context>
     <name>QObject</name>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="259"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="276"/>
         <source>Incompatible with %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="271"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="288"/>
         <location filename="MOTools/Loot.cpp" line="422"/>
         <source>Warning</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginListModel.cpp" line="275"/>
+        <location filename="BSPluginList/PluginListModel.cpp" line="292"/>
         <location filename="MOTools/Loot.cpp" line="417"/>
         <source>Error</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="313"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="372"/>
         <source>Choose backup to restore</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="330"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="389"/>
         <source>No Backups</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="BSPluginList/PluginsWidget.cpp" line="331"/>
+        <location filename="BSPluginList/PluginsWidget.cpp" line="390"/>
         <source>There are no backups to restore</source>
         <translation type="unfinished"></translation>
     </message>
