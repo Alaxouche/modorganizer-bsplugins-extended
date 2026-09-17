@@ -70,6 +70,10 @@ public:
                          TESFile::Type type, const std::string& name);
   void addGroupPlaceholder(const std::string& pluginName, const RecordPath& path);
 
+  // Parses a single plugin's records on demand. Used when the up-front scan was
+  // header-only because conflict management is disabled.
+  void parsePluginRecords(int id);
+
   void refresh(bool invalidate = false);
 
   void setEnabled(int id, bool enable);
@@ -137,6 +141,14 @@ public:
   void addLootReport(const QString& name, MOTools::Loot::Plugin plugin) override;
   [[nodiscard]] const MOTools::Loot::Plugin* getLootReport(const QString& name) const;
 
+  // Call after toggling Record::setIgnored so the next writePluginLists()
+  // rebuilds the ignored-records file; unchanged state skips that full rescan.
+  void notifyIgnoredRecordsChanged() { m_IgnoredRecordsDirty = true; }
+
+  // Snap locked plugins back to their pinned priority; call outside of any
+  // model reset so the resulting move notifications reach live views.
+  void enforceLockedOrder();
+
 public slots:
   void writePluginLists() const;
 
@@ -149,8 +161,8 @@ private:
 
   void scanDataFiles(bool invalidate);
   void readPluginLists();
-  void checkBsa(TESData::FileInfo& info,
-                const std::shared_ptr<const MOBase::IFileTree>& fileTree);
+  void checkBsa(TESData::FileInfo& info, const QStringList& archiveNames,
+                bool associateArchives);
   void associateArchive(const TESData::FileInfo& info, const QString& archiveName);
 
   [[nodiscard]] QString groupsPath() const;
@@ -177,6 +189,7 @@ private:
   void queuePluginStateChange(const QString& pluginName, PluginStates state);
   void dispatchPluginStateChanges();
   void pluginStatesChanged(const QStringList& pluginNames, PluginStates state) const;
+  [[nodiscard]] bool isLoadOrderValid() const;
   void enforcePluginRelationships();
   void testMasters();
   void updateCache();
@@ -209,6 +222,8 @@ private:
   mutable std::shared_mutex m_ArchiveEntryMutex;
 
   bool m_Refreshing = true;
+  bool m_EnforcingLockedOrder = false;
+  mutable bool m_IgnoredRecordsDirty = false;
   std::map<QString, PluginStates> m_QueuedStateChanges;
   std::set<QString> m_PendingActive;
 

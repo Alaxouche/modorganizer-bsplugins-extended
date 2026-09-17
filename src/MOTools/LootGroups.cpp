@@ -1,5 +1,6 @@
 #include "LootGroups.h"
 
+#include <log.h>
 #include <safewritefile.h>
 #include <utility.h>
 
@@ -13,8 +14,67 @@
 #pragma warning(pop)
 
 #include <map>
+#include <stdexcept>
+#include <string>
 
 using namespace Qt::Literals::StringLiterals;
+
+namespace
+{
+
+// ryml's default error handler calls abort(), which took MO2 down with it
+// whenever a LOOT masterlist contained YAML the parser rejects. Throwing
+// instead makes the failure recoverable. The template detects which error
+// API this ryml snapshot has (m_error before 2026, split handlers after).
+template <typename Callbacks>
+void installThrowingHandlers(Callbacks& callbacks)
+{
+  if constexpr (requires { callbacks.m_error_parse; }) {
+    callbacks.m_error_basic = [](auto msg, auto const& /*errdata*/,
+                                 void* /*user_data*/) {
+      throw std::runtime_error(std::string(msg.str, msg.len));
+    };
+    callbacks.m_error_parse = [](auto msg, auto const& /*errdata*/,
+                                 void* /*user_data*/) {
+      throw std::runtime_error(std::string(msg.str, msg.len));
+    };
+    callbacks.m_error_visit = [](auto msg, auto const& /*errdata*/,
+                                 void* /*user_data*/) {
+      throw std::runtime_error(std::string(msg.str, msg.len));
+    };
+  } else {
+    callbacks.m_error = [](const char* msg, size_t len, auto /*loc*/,
+                           void* /*user_data*/) {
+      throw std::runtime_error(std::string(msg, len));
+    };
+  }
+}
+
+struct RymlThrowOnError
+{
+  RymlThrowOnError() : previous{ryml::get_callbacks()}
+  {
+    ryml::Callbacks callbacks = previous;
+    installThrowingHandlers(callbacks);
+    ryml::set_callbacks(callbacks);
+  }
+
+  ~RymlThrowOnError() { ryml::set_callbacks(previous); }
+
+  ryml::Callbacks previous;
+};
+
+}  // namespace
+
+template<typename F>
+static void commitSafeFile(F& file)
+{
+  if constexpr (requires(F& f) { f.commit(); }) {
+    file.commit();
+  } else {
+    file->commit();
+  }
+}
 
 namespace MOTools
 {
@@ -37,7 +97,11 @@ static void importLootGroups(const QString& lootconfig,
     return;
   }
 
-  auto buffer     = f.readAll();
+  auto buffer = f.readAll();
+
+  try {
+    const RymlThrowOnError errorGuard;
+
   ryml::Tree tree = ryml::parse_in_place(ryml::substr(buffer.data(), buffer.size()));
   tree.resolve();
 
@@ -82,6 +146,11 @@ static void importLootGroups(const QString& lootconfig,
       }
     }
   }
+
+  } catch (const std::exception& e) {
+    MOBase::log::warn("failed to parse LOOT list \"{}\": {}",
+                      lootconfig.toStdString(), e.what());
+  }
 }
 
 static void writeGroups(const QString& plugingroups, std::map<QString, QString>& groups)
@@ -121,7 +190,7 @@ static void writeGroups(const QString& plugingroups, std::map<QString, QString>&
     }
   }
 
-  file.commit();
+  commitSafeFile(file);
 }
 
 void importLootGroups(const TESData::PluginList* pluginList,

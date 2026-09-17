@@ -23,7 +23,14 @@ void RecordStructureModel::refresh()
 {
   boost::container::flat_map<int, const TESData::FileEntry*> entries;
   for (const auto handle : m_Record->alternatives()) {
+    // A handle can outlive the entry it names: the conflict tree is rebuilt
+    // from scratch on a full refresh, and this dialog keeps running over the
+    // old record. Skip what no longer resolves instead of dereferencing it.
     const auto entry = m_PluginList->findEntryByHandle(handle);
+    if (!entry) {
+      continue;
+    }
+
     const auto info =
         m_PluginList->getPluginByName(QString::fromStdString(entry->name()));
     if (info && info->enabled()) {

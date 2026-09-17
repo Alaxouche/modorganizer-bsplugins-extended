@@ -112,22 +112,56 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
   connect(m_PluginListModel, &PluginListModel::pluginStatesChanged, this,
           &PluginsWidget::updatePluginCount);
 
+  m_WriteTimer = new QTimer(this);
+  m_WriteTimer->setSingleShot(true);
+  m_WriteTimer->setInterval(500);
+  connect(m_WriteTimer, &QTimer::timeout, this, [this]() {
+    if (m_IsRunningApp || m_PluginList->isRefreshing()) {
+      return;
+    }
+    m_PluginList->writePluginLists();
+  });
+
   connect(m_PluginListModel, &QAbstractItemModel::dataChanged, this,
           [this](const QModelIndex&, const QModelIndex&, const QList<int>&) {
             if (m_IsRunningApp || m_PluginList->isRefreshing()) {
               return;
             }
 
-
-            m_PluginList->writePluginLists();
+            // Coalesce bursts of edits and keep the disk write - which rescans
+            // every record to rebuild the ignored-records file - off the
+            // interactive path. Flushed explicitly on run/save/close.
+            m_WriteTimer->start();
           });
 
-  connect(m_GroupProxy, &QAbstractItemModel::modelReset, [this]() {
-    if (Settings::instance()->enablePluginGrouping()) {
-      Settings::instance()->restoreTreeExpandState(ui->pluginList);
-    }
+  // The context object matters: without it the connection outlives this
+  // widget and the lambda dereferences a freed ui during panel teardown.
+  //
+  // The restore itself MUST be deferred: this reset fires synchronously in
+  // the middle of applyGroupingSetting() (before the view has switched
+  // models) and in the middle of source-model reset cascades. Walking the
+  // proxy chain at that point reads half-updated mappings and crashed MO2
+  // when toggling the grouping setting.
+  connect(m_GroupProxy, &QAbstractItemModel::modelReset, this, [this]() {
+    QTimer::singleShot(0, this, [this]() {
+      if (Settings::instance()->enablePluginGrouping() &&
+          ui->pluginList->model() == m_GroupProxy) {
+        m_RestoringExpandState = true;
+        Settings::instance()->restoreTreeExpandState(ui->pluginList);
+        m_RestoringExpandState = false;
+      }
 
-    QTimer::singleShot(0, this, [this]() { restoreScrollPosition(); });
+      restoreScrollPosition();
+    });
+  });
+
+  m_ExpandStateTimer = new QTimer(this);
+  m_ExpandStateTimer->setSingleShot(true);
+  m_ExpandStateTimer->setInterval(200);
+  connect(m_ExpandStateTimer, &QTimer::timeout, this, [this]() {
+    if (!m_RestoringExpandState && Settings::instance()->enablePluginGrouping()) {
+      Settings::instance()->saveTreeExpandState(ui->pluginList);
+    }
   });
 
   connect(ui->pluginList, &QTreeView::collapsed, this,
@@ -154,13 +188,18 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
 
 PluginsWidget::~PluginsWidget() noexcept
 {
-  delete ui;
-  delete optionsMenu;
-
-  delete m_PluginList;
-  delete m_PluginListModel;
-  delete m_SortProxy;
+  // Tear the model chain down top-first and before the ui: destroying a source
+  // model resets its proxies, and those resets must not reach a deleted view
+  // or the ui struct. The view survives (child widget) and handles model
+  // destruction on its own.
+  disconnect(m_GroupProxy, nullptr, nullptr, nullptr);
   delete m_GroupProxy;
+  delete m_SortProxy;
+  delete m_PluginListModel;
+  delete m_PluginList;
+
+  delete optionsMenu;
+  delete ui;
 }
 
 void PluginsWidget::updatePluginCount()
@@ -168,6 +207,8 @@ void PluginsWidget::updatePluginCount()
   int activeMasterCount      = 0;
   int activeLightMasterCount = 0;
   int activeOverlayCount     = 0;
+  int activeMediumCount      = 0;
+  int mediumCount            = 0;
   int activeRegularCount     = 0;
   int masterCount            = 0;
   int lightMasterCount       = 0;
@@ -181,6 +222,8 @@ void PluginsWidget::updatePluginCount()
 
   const bool lightPluginsAreSupported =
       tesSupport && tesSupport->lightPluginsAreSupported();
+  const bool mediumPluginsAreSupported =
+      tesSupport && tesSupport->mediumPluginsAreSupported();
   const bool conflictManagementEnabled =
       Settings::instance()->enablePluginConflictManagement();
 
@@ -201,6 +244,10 @@ void PluginsWidget::updatePluginCount()
       ++lightMasterCount;
       activeLightMasterCount += active ? 1 : 0;
       activeVisibleCount += visible && active ? 1 : 0;
+    } else if (mediumPluginsAreSupported && info->isMediumFile()) {
+      ++mediumCount;
+      activeMediumCount += active ? 1 : 0;
+      activeVisibleCount += visible && active ? 1 : 0;
     } else if (info->isMasterFile()) {
       ++masterCount;
       activeMasterCount += active ? 1 : 0;
@@ -217,8 +264,9 @@ void PluginsWidget::updatePluginCount()
   }
 
   const int activeCount = activeMasterCount + activeLightMasterCount +
-                          activeOverlayCount + activeRegularCount;
-  const int totalCount = masterCount + lightMasterCount + overlayCount + regularCount;
+                          activeMediumCount + activeOverlayCount + activeRegularCount;
+  const int totalCount =
+      masterCount + lightMasterCount + mediumCount + overlayCount + regularCount;
 
   ui->activePluginsCounter->display(activeVisibleCount);
 
@@ -240,6 +288,8 @@ void PluginsWidget::updatePluginCount()
                  .arg(masterCount + regularCount);
   if (lightPluginsAreSupported)
     toolTip += row.arg(tr("ESLs")).arg(activeLightMasterCount).arg(lightMasterCount);
+  if (mediumPluginsAreSupported)
+    toolTip += row.arg(tr("ESHs")).arg(activeMediumCount).arg(mediumCount);
   if (Settings::instance()->enablePluginConflictManagement() && conflictCount > 0)
     toolTip +=
         uR"(<tr><td>%1:</td><td align=right colspan=2>%2</td></tr>)"_s.arg(
@@ -279,6 +329,9 @@ bool PluginsWidget::eventFilter(QObject* watched, QEvent* event)
 
   if (event->type() == QEvent::Close) {
     saveState();
+    if (m_WriteTimer) {
+      m_WriteTimer->stop();
+    }
     m_PluginList->writePluginLists();
   }
 
@@ -299,8 +352,10 @@ void PluginsWidget::changeEvent(QEvent* event)
 
 void PluginsWidget::onGroupCollapsed(const QModelIndex& index)
 {
-  if (Settings::instance()->enablePluginGrouping()) {
-    Settings::instance()->saveTreeExpandState(ui->pluginList);
+  // Saving while restoreTreeExpandState() is expanding rows would overwrite
+  // the persisted list with a partially-restored one.
+  if (!m_RestoringExpandState && Settings::instance()->enablePluginGrouping()) {
+    m_ExpandStateTimer->start();
   }
 
   if (ui->pluginList->selectionModel()->isSelected(index)) {
@@ -310,8 +365,8 @@ void PluginsWidget::onGroupCollapsed(const QModelIndex& index)
 
 void PluginsWidget::onGroupExpanded(const QModelIndex& index)
 {
-  if (Settings::instance()->enablePluginGrouping()) {
-    Settings::instance()->saveTreeExpandState(ui->pluginList);
+  if (!m_RestoringExpandState && Settings::instance()->enablePluginGrouping()) {
+    m_ExpandStateTimer->start();
   }
 
   if (ui->pluginList->selectionModel()->isSelected(index)) {
@@ -422,16 +477,38 @@ static QString queryRestore(const QString& filePath, QWidget* parent = nullptr)
 
 void PluginsWidget::displayPluginInformation(const QModelIndex& index)
 {
-  const int id        = index.data(PluginListModel::IndexRole).toInt();
-  const auto fileName = m_PluginList->getPlugin(id)->name();
-  const auto parent   = topLevelWidget();
-  BSPluginInfo::PluginInfoDialog dialog{m_Organizer, m_PluginList, fileName, parent};
-  dialog.exec();
+  const int id     = index.data(PluginListModel::IndexRole).toInt();
+  const auto* info = m_PluginList->getPlugin(id);
+  if (!info) {
+    return;
+  }
+  const auto fileName = info->name();
+
+  // Records are scanned up-front only when conflict management is enabled.
+  // Otherwise parse this plugin on demand so the dialog can show its records.
+  if (!info->recordsParsed()) {
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    m_PluginList->parsePluginRecords(id);
+    QApplication::restoreOverrideCursor();
+  }
+
+  const auto parent = topLevelWidget();
+  {
+    BSPluginInfo::PluginInfoDialog dialog{m_Organizer, m_PluginList, fileName, parent};
+    m_PluginInfoOpen = true;
+    dialog.exec();
+    m_PluginInfoOpen = false;
+  }
 
   const bool ignoreMasters =
       Settings::instance()->get<bool>("ignore_master_conflicts", false);
   toggleIgnoreMasters->setChecked(ignoreMasters);
   m_PluginListModel->invalidateConflicts();
+
+  if (m_RefreshDeferred) {
+    m_RefreshDeferred = false;
+    refreshPluginListPreservingScroll();
+  }
 }
 
 void PluginsWidget::on_pluginList_customContextMenuRequested(const QPoint& pos)
@@ -442,8 +519,11 @@ void PluginsWidget::on_pluginList_customContextMenuRequested(const QPoint& pos)
   connect(&menu, &PluginListContextMenu::openModInformation,
           [this](const QModelIndex& index) {
             const int id        = index.data(PluginListModel::IndexRole).toInt();
-            const auto fileName = m_PluginList->getPlugin(id)->name();
-            m_PanelInterface->displayOriginInformation(fileName);
+            const auto* info    = m_PluginList->getPlugin(id);
+            if (!info) {
+              return;
+            }
+            m_PanelInterface->displayOriginInformation(info->name());
           });
 
   connect(&menu, &PluginListContextMenu::openPluginInformation, this,
@@ -528,6 +608,11 @@ void PluginsWidget::on_sortButton_clicked()
     return;
   }
 
+  // LOOT reads the load order from disk; make sure pending edits are flushed.
+  if (m_WriteTimer) {
+    m_WriteTimer->stop();
+  }
+  m_PluginList->writePluginLists();
 
   const bool didUpdateMasterList = offline ? true : m_DidUpdateMasterList;
 
@@ -628,6 +713,9 @@ static bool createBackup(const QString& filePath, const QDateTime& time,
 
 void PluginsWidget::on_saveButton_clicked()
 {
+  if (m_WriteTimer) {
+    m_WriteTimer->stop();
+  }
   m_PluginList->writePluginLists();
 
   const auto app         = this->topLevelWidget();
@@ -705,6 +793,10 @@ void PluginsWidget::saveState()
   saveScrollPosition();
   settings->saveState(ui->pluginList->header());
   if (settings->enablePluginGrouping()) {
+    // Flush whatever the coalescing timer still owes before writing.
+    if (m_ExpandStateTimer) {
+      m_ExpandStateTimer->stop();
+    }
     settings->saveTreeExpandState(ui->pluginList);
   }
 }
@@ -716,7 +808,9 @@ void PluginsWidget::restoreState()
   applyGroupingSetting();
 
   if (settings->enablePluginGrouping()) {
+    m_RestoringExpandState = true;
     settings->restoreTreeExpandState(ui->pluginList);
+    m_RestoringExpandState = false;
   }
 
   const bool doHide = settings->get<bool>("hide_force_enabled", false);
@@ -756,6 +850,13 @@ void PluginsWidget::restoreScrollPosition()
 
 void PluginsWidget::refreshPluginListPreservingScroll()
 {
+  // Rebuilding the list would free the file entries and records the plugin
+  // info dialog is still pointing at; replay the refresh once it closes.
+  if (m_PluginInfoOpen) {
+    m_RefreshDeferred = true;
+    return;
+  }
+
   if (const auto* const scrollBar = ui->pluginList->verticalScrollBar()) {
     m_PendingScrollPosition = scrollBar->value();
   } else {
@@ -785,23 +886,45 @@ static bool containsPlugin(const MOBase::IModInterface* mod)
 void PluginsWidget::onModStateChanged(
     const std::map<QString, MOBase::IModList::ModStates>& mods)
 {
-
-
   const auto modList = m_Organizer->modList();
   if (!modList)
     return;
 
+  bool affectsPlugins = false;
   for (const auto& [modName, modState] : mods) {
     const auto mod = modList->getMod(modName);
     if (containsPlugin(mod)) {
       m_PluginList->notifyPendingState(modName, modState);
+      affectsPlugins = true;
     }
   }
-  refreshPluginListPreservingScroll();
+
+  if (!affectsPlugins) {
+    return;
+  }
+
+  // Toggling a mod also makes MO2 refresh its virtual file system, which fires
+  // startRefresh() (see synchronizePluginLists). Refreshing here as well would
+  // rebuild the whole list twice. Defer to the end of the event loop and skip
+  // the refresh entirely if startRefresh already handled it in the meantime.
+  if (m_ModStateRefreshPending) {
+    return;
+  }
+  m_ModStateRefreshPending = true;
+  QTimer::singleShot(0, this, [this]() {
+    if (!m_ModStateRefreshPending) {
+      return;
+    }
+    m_ModStateRefreshPending = false;
+    refreshPluginListPreservingScroll();
+  });
 }
 
 bool PluginsWidget::onAboutToRun([[maybe_unused]] const QString& binary)
 {
+  if (m_WriteTimer) {
+    m_WriteTimer->stop();
+  }
   m_PluginList->writePluginLists();
 
   const auto profilePath = QDir(m_Organizer->profilePath());
@@ -890,6 +1013,15 @@ void PluginsWidget::onSettingChanged(const QString& key,
     updateGroupActionVisibility();
   } else if (key == u"enable_plugin_conflict_management"_s) {
     applyConflictManagementSetting();
+    // Whether records are scanned up-front depends on this setting; re-parse
+    // so the list reflects the new mode (full scan on, header-only off).
+    m_PluginListModel->invalidate();
+  } else if (key == u"enable_cell_conflict_detection"_s) {
+    // The conflict data was built with the previous value; re-parse so
+    // CELL/WRLD child conflicts appear or disappear without a manual refresh.
+    if (Settings::instance()->enablePluginConflictManagement()) {
+      m_PluginListModel->invalidate();
+    }
   }
 }
 
@@ -917,6 +1049,9 @@ void PluginsWidget::applyConflictManagementSetting()
   const bool enabled = Settings::instance()->enablePluginConflictManagement();
 
   ui->pluginList->setColumnHidden(PluginListModel::COL_CONFLICTS, !enabled);
+  // The records count is a by-product of the conflict scan; hide it too when
+  // conflict management is off (records are then parsed only on demand).
+  ui->pluginList->setColumnHidden(PluginListModel::COL_RECORDS, !enabled);
 
   if (toggleIgnoreMasters) {
     toggleIgnoreMasters->setEnabled(enabled);
@@ -979,7 +1114,8 @@ void PluginsWidget::renameSelectedGroup()
     return;
   }
 
-  m_PluginListModel->renameGroup(oldGroup, group);
+  m_PluginListModel->renameGroup(oldGroup,
+                                 m_PluginListModel->uniqueGroupName(group));
 }
 
 void PluginsWidget::removeSelectedGroup()
@@ -1025,13 +1161,28 @@ void PluginsWidget::mergeSelectedGroup()
 
 void PluginsWidget::applyGroupingSetting()
 {
-  auto* const model = Settings::instance()->enablePluginGrouping()
+  const bool groupingEnabled = Settings::instance()->enablePluginGrouping();
+
+  // The group proxy is attached to the sort proxy only while grouping is on.
+  // Left attached, it would rebuild its whole group tree on every source
+  // change and shuffle persistent indexes nobody looks at - and any stale
+  // mapping it produced could crash the view later.
+  if (groupingEnabled && m_GroupProxy->sourceModel() != m_SortProxy) {
+    m_GroupProxy->setSourceModel(m_SortProxy);
+  }
+
+  auto* const model = groupingEnabled
                           ? static_cast<QAbstractItemModel*>(m_GroupProxy)
                           : static_cast<QAbstractItemModel*>(m_SortProxy);
 
   if (ui->pluginList->model() != model) {
     ui->pluginList->setModel(model);
     ui->pluginList->sortByColumn(PluginListModel::COL_PRIORITY, Qt::AscendingOrder);
+  }
+
+  // Detach only after the view stopped using the proxy.
+  if (!groupingEnabled && m_GroupProxy->sourceModel()) {
+    m_GroupProxy->setSourceModel(nullptr);
   }
 
   if (m_ViewSelectionChangedConnection) {
@@ -1041,7 +1192,7 @@ void PluginsWidget::applyGroupingSetting()
       connect(ui->pluginList->selectionModel(), &QItemSelectionModel::selectionChanged,
               this, &PluginsWidget::onSelectionChanged);
 
-  if (!Settings::instance()->enablePluginGrouping()) {
+  if (!groupingEnabled) {
     ui->pluginList->collapseAll();
   }
 }
@@ -1150,15 +1301,25 @@ void PluginsWidget::synchronizePluginLists(MOBase::IOrganizer* organizer)
     m_OrganizerRefreshing = true;
     m_PluginList->flushPendingStates();
 
-
+    // See refreshPluginListPreservingScroll(): the info dialog runs its own
+    // event loop, so an organizer refresh can land while it is still open.
+    if (m_PluginInfoOpen) {
+      m_RefreshDeferred        = true;
+      m_ModStateRefreshPending = false;
+      return;
+    }
 
     if (const auto* const sb = ui->pluginList->verticalScrollBar())
       m_PendingScrollPosition = sb->value();
 
+    // A full invalidate() clears the plugin list and re-parses every plugin
+    // file from disk, which freezes the UI on large load orders. An incremental
+    // refresh() only parses plugins that newly appeared and drops the ones that
+    // disappeared - exactly what a VFS refresh after a mod toggle requires.
+    m_PluginListModel->refresh();
 
-
-
-    m_PluginListModel->invalidate();
+    // This refresh supersedes any pending onModStateChanged refresh.
+    m_ModStateRefreshPending = false;
   };
 
   organizer->onNextRefresh(startRefresh, false);

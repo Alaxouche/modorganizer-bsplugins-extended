@@ -5,6 +5,7 @@
 
 #include <QString>
 
+#include <mutex>
 #include <set>
 #include <span>
 
@@ -75,7 +76,14 @@ public:
     }
   }
 
-  void addAlternative(TESFileHandle origin) { m_Alternatives.insert(origin); }
+  void addAlternative(TESFileHandle origin)
+  {
+    // A master's records are shared across plugins and receive addAlternative()
+    // calls from several parser threads at once; serialize the set insertion.
+    static std::mutex alternativesMutex;
+    const std::scoped_lock lk{alternativesMutex};
+    m_Alternatives.insert(origin);
+  }
 
 private:
   TESFile::Type m_FormType;

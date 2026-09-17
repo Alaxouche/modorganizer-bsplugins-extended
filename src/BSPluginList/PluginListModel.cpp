@@ -6,6 +6,7 @@
 #include <QMimeData>
 
 #include <algorithm>
+#include <atomic>
 #include <future>
 #include <iterator>
 #include <semaphore>
@@ -260,9 +261,16 @@ QVariant PluginListModel::fontData(const QModelIndex& index) const
                             plugin->isMasterFlagged();
       if (isLight) {
         result.setItalic(true);
+      } else if (plugin->isMediumFile()) {
+        // Same convention as MO2's own plugin list: medium is underlined,
+        // blueprint gets extra letter spacing.
+        result.setUnderline(true);
       }
       if (isMaster) {
         result.setBold(true);
+      }
+      if (plugin->isBlueprintFlagged()) {
+        result.setLetterSpacing(QFont::SpacingType::AbsoluteSpacing, 2);
       }
     }
   }
@@ -419,6 +427,23 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
                  "</b>: " + QFileInfo(plugin->name()).baseName() + ".ini";
     }
 
+    if (!plugin->isSmallFile() && !plugin->forceLoaded()) {
+      switch (plugin->lightCapability()) {
+      case TESData::FileInfo::LightCapability::Capable:
+        toolTip += "<br><b>" + tr("ESL capable") + "</b>: " +
+                   tr("the ESL flag can be added without compacting (%1 new records).")
+                       .arg(plugin->newRecordCount());
+        break;
+      case TESData::FileInfo::LightCapability::CapableWithCompacting:
+        toolTip += "<br><b>" + tr("ESL capable") + "</b>: " +
+                   tr("requires compacting %1 new records in xEdit first.")
+                       .arg(plugin->newRecordCount());
+        break;
+      default:
+        break;
+      }
+    }
+
     if (plugin->hasNoRecords()) {
       toolTip +=
           "<br><br>" + tr("This is a dummy plugin. It contains no records and is "
@@ -496,6 +521,48 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
       toolTip += tr("This file is flagged as an ESL. It will adhere to its position in "
                     "the load order but the records will be loaded in ESL space.") +
                  spacing;
+    }
+
+    if (plugin->isMediumFile()) {
+      toolTip += tr("This file is flagged as a medium plugin (ESH). It keeps its "
+                    "position in the load order but its records are loaded in the "
+                    "FD space, which holds 256 plugins of 65535 records each.") +
+                 spacing;
+    }
+
+    if (plugin->isLightFlagged() && plugin->isMediumFlagged()) {
+      toolTip += tr("WARNING: this plugin carries both the light and the medium "
+                    "flag. The game honours the light flag and ignores the medium "
+                    "one; clear one of the two in xEdit.") +
+                 spacing;
+    }
+
+    if (plugin->isBlueprintFlagged()) {
+      toolTip += tr("This file is flagged as a blueprint plugin. It is forced to "
+                    "load after every non-blueprint plugin regardless of its "
+                    "position in the list.") +
+                 spacing;
+    }
+
+    if (!plugin->isSmallFile() && !plugin->forceLoaded()) {
+      switch (plugin->lightCapability()) {
+      case TESData::FileInfo::LightCapability::Capable:
+        toolTip += tr("This plugin could be flagged as ESL without compacting "
+                      "(%1 new records). Flagging it in xEdit frees a load "
+                      "order slot.")
+                       .arg(plugin->newRecordCount()) +
+                   spacing;
+        break;
+      case TESData::FileInfo::LightCapability::CapableWithCompacting:
+        toolTip += tr("This plugin could be flagged as ESL after compacting its "
+                      "FormIDs in xEdit (%1 new records). Compacting invalidates "
+                      "existing save games referencing this plugin.")
+                       .arg(plugin->newRecordCount()) +
+                   spacing;
+        break;
+      default:
+        break;
+      }
     }
 
     if (plugin->isOverlayFlagged()) {
@@ -611,6 +678,22 @@ QVariant PluginListModel::iconData(const QModelIndex& index) const
 
   if (plugin->isSmallFile()) {
     flag |= FLAG_LIGHT;
+  }
+
+  if (!plugin->isSmallFile() && !plugin->forceLoaded()) {
+    using enum TESData::FileInfo::LightCapability;
+    const auto capability = plugin->lightCapability();
+    if (capability == Capable || capability == CapableWithCompacting) {
+      flag |= FLAG_LIGHT_CAPABLE;
+    }
+  }
+
+  if (plugin->isMediumFile()) {
+    flag |= FLAG_MEDIUM;
+  }
+
+  if (plugin->isBlueprintFlagged()) {
+    flag |= FLAG_BLUEPRINT;
   }
 
   if (plugin->isOverlayFlagged()) {
@@ -766,12 +849,15 @@ PluginListModel::groups(std::function<bool(const TESData::FileInfo*)> pred) cons
   for (int priority = 0, count = m_Plugins->pluginCount(); priority < count;
        ++priority) {
     const auto plugin = m_Plugins->getPluginByPriority(priority);
+    if (!plugin) {
+      continue;
+    }
 
     if (pred && !pred(plugin)) {
       continue;
     }
 
-    const auto& group = plugin ? plugin->group() : QString();
+    const auto& group = plugin->group();
     if (group.isEmpty() || group == lastGroup) {
       continue;
     }
@@ -794,6 +880,33 @@ PluginListModel::groups(std::function<bool(const TESData::FileInfo*)> pred) cons
   }
 
   return groups;
+}
+
+QString PluginListModel::uniqueGroupName(const QString& desired) const
+{
+  if (desired.isEmpty()) {
+    return desired;
+  }
+
+  const QStringList taken = groups();
+  const auto isTaken      = [&taken](const QString& name) {
+    return std::ranges::any_of(taken, [&name](const QString& other) {
+      return other.compare(name, Qt::CaseInsensitive) == 0;
+    });
+  };
+
+  if (!isTaken(desired)) {
+    return desired;
+  }
+
+  for (int suffix = 2; suffix < 1000; ++suffix) {
+    const QString candidate = QStringLiteral("%1 (%2)").arg(desired).arg(suffix);
+    if (!isTaken(candidate)) {
+      return candidate;
+    }
+  }
+
+  return desired;
 }
 
 QStringList PluginListModel::masterGroups() const
@@ -842,20 +955,31 @@ static void prewarmConflicts(TESData::PluginList* plugins)
   }
 
 
-  const uint concurrency = std::max(2U, std::thread::hardware_concurrency());
-  std::counting_semaphore smph{concurrency};
+  if (toWarm.empty()) {
+    return;
+  }
 
-  std::vector<std::future<void>> futures;
-  futures.reserve(toWarm.size());
-  for (const auto* plugin : toWarm) {
-    futures.push_back(std::async(std::launch::async, [plugin, &smph]() {
-      smph.acquire();
-      (void)plugin->conflictState();
-      smph.release();
+  // Fixed worker pool over an atomic cursor; spawning one thread per plugin
+  // costs more than the conflict checks themselves on big load orders.
+  const std::size_t workerCount = std::min<std::size_t>(
+      std::max(2U, std::thread::hardware_concurrency()), toWarm.size());
+  std::atomic<std::size_t> next{0};
+
+  std::vector<std::future<void>> workers;
+  workers.reserve(workerCount);
+  for (std::size_t w = 0; w < workerCount; ++w) {
+    workers.push_back(std::async(std::launch::async, [&]() {
+      for (;;) {
+        const std::size_t i = next.fetch_add(1, std::memory_order_relaxed);
+        if (i >= toWarm.size()) {
+          break;
+        }
+        (void)toWarm[i]->conflictState();
+      }
     }));
   }
-  for (auto& f : futures) {
-    f.wait();
+  for (auto& worker : workers) {
+    worker.wait();
   }
 }
 
@@ -868,6 +992,10 @@ void PluginListModel::refresh()
   m_ConflictCache.reserve(m_Plugins->pluginCount());
   m_FlagsCache.reserve(m_Plugins->pluginCount());
   emit endResetModel();
+
+  // After the views have been reset: pin locked plugins back where they
+  // belong (LOOT or an external tool may have moved them on disk).
+  m_Plugins->enforceLockedOrder();
 }
 
 void PluginListModel::invalidate()
@@ -879,6 +1007,10 @@ void PluginListModel::invalidate()
   m_ConflictCache.reserve(m_Plugins->pluginCount());
   m_FlagsCache.reserve(m_Plugins->pluginCount());
   emit endResetModel();
+
+  // After the views have been reset: pin locked plugins back where they
+  // belong (LOOT or an external tool may have moved them on disk).
+  m_Plugins->enforceLockedOrder();
 }
 
 void PluginListModel::invalidateConflicts()
@@ -918,6 +1050,28 @@ void PluginListModel::changePluginStates(
     const std::map<QString, MOBase::IPluginList::PluginStates>& infos)
 {
   clearRoleCaches();
+
+  // A STATE_MISSING change erases a row from the plugin list. Removing rows
+  // without begin/endRemoveRows would desync the view and proxies; fall back
+  // to a full model reset whenever a removal is about to happen.
+  bool willRemoveRows = false;
+  for (const auto& [name, state] : infos) {
+    if (state == MOBase::IPluginList::STATE_MISSING &&
+        m_Plugins->getIndex(name) != -1) {
+      willRemoveRows = true;
+      break;
+    }
+  }
+
+  if (willRemoveRows) {
+    emit beginResetModel();
+    for (const auto& [name, state] : infos) {
+      m_Plugins->setState(name, state);
+    }
+    emit endResetModel();
+    emit pluginStatesChanged({});
+    return;
+  }
 
   QModelIndexList indices;
   for (auto& [name, state] : infos) {

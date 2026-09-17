@@ -1,5 +1,6 @@
 #include "PluginList.h"
 #include "FileConflictParser.h"
+#include "MOPlugin/Settings.h"
 #include "TESFile/Reader.h"
 
 #include <bsatk.h>
@@ -12,15 +13,18 @@
 
 #include <boost/container/flat_map.hpp>
 #include <boost/container/flat_set.hpp>
-#include <boost/thread/future.hpp>
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QHash>
 #include <QStringTokenizer>
 #include <QTextStream>
 #include <QUrl>
 
 #include <algorithm>
+#include <atomic>
 #include <future>
 #include <iterator>
 #include <limits>
@@ -31,6 +35,17 @@
 #include <utility>
 
 using namespace Qt::Literals::StringLiterals;
+
+// SafeWriteFile::commit() (2.5.2) vs file->commit() via QSaveFile (2.5.3).
+template<typename F>
+static void commitSafeFile(F& file)
+{
+  if constexpr (requires(F& f) { f.commit(); }) {
+    file.commit();
+  } else {
+    file->commit();
+  }
+}
 
 namespace TESData
 {
@@ -206,6 +221,45 @@ void PluginList::addGroupPlaceholder(const std::string& pluginName,
   }
 }
 
+void PluginList::parsePluginRecords(int id)
+{
+  const auto plugin = getPlugin(id);
+  if (!plugin || plugin->recordsParsed()) {
+    return;
+  }
+
+  const QString fullPath = m_Organizer->resolvePath(plugin->name());
+  if (fullPath.isEmpty()) {
+    return;
+  }
+
+  const auto gameFeatures = m_Organizer->gameFeatures();
+  const auto tesSupport =
+      gameFeatures ? gameFeatures->gameFeature<MOBase::GamePlugins>() : nullptr;
+  const bool lightSupported  = tesSupport && tesSupport->lightPluginsAreSupported();
+  // See scanDataFiles(): one Starfield query stands for overlay, medium and
+  // blueprint, and blueprintPluginsAreSupported() must not be called at all.
+  const bool mediumSupported = tesSupport && tesSupport->mediumPluginsAreSupported();
+
+  try {
+    FileConflictParser handler{this,
+                               plugin,
+                               lightSupported,
+                               mediumSupported,
+                               mediumSupported,
+                               mediumSupported,
+                               true};
+    TESFile::Reader<FileConflictParser> reader{};
+    reader.parse(std::filesystem::path(fullPath.toStdWString()), handler);
+  } catch (const std::exception& e) {
+    MOBase::log::error("Error parsing records for \"{}\": {}",
+                       fullPath.toStdString(), e.what());
+  }
+
+  plugin->setRecordsParsed(true);
+  plugin->invalidateConflicts();
+}
+
 #pragma endregion Record Access
 #pragma region List Management
 
@@ -243,6 +297,15 @@ void PluginList::refresh(bool invalidate)
   MOBase::TimeThis tt{"TESData::PluginList::refresh()"};
 
   m_Refreshing = true;
+
+  // Ensure the flag is cleared even if a step below throws; a stuck
+  // m_Refreshing would silently block every subsequent update and write.
+  struct RefreshGuard
+  {
+    bool& flag;
+    ~RefreshGuard() { flag = false; }
+  } refreshGuard{m_Refreshing};
+
   scanDataFiles(invalidate);
   readPluginLists();
 
@@ -562,6 +625,18 @@ void PluginList::moveToPriority(std::vector<int> ids, int destination, bool disj
     auto& [name, newPriority] = moveInfo;
     m_PluginMoved(name, oldPriority, newPriority);
   }
+
+  // Locks pin plugins against external changes (LOOT, xEdit), which come back
+  // through refresh(); edits made here in the panel move the pin along with
+  // the plugin. Skipped while enforcement itself is running, so the stored
+  // targets survive until every locked plugin has been snapped back.
+  if (!m_EnforcingLockedOrder) {
+    for (const auto& plugin : m_Plugins) {
+      if (plugin->lockedOrder()) {
+        plugin->setLockedPriority(plugin->priority());
+      }
+    }
+  }
 }
 
 void PluginList::shiftPriority(const std::vector<int>& ids, int offset)
@@ -783,10 +858,12 @@ void PluginList::setState(const QString& name, PluginStates state)
     return;
   }
 
-  const auto plugin = m_Plugins.at(it->second).get();
+  // Keep a shared_ptr copy so the FileInfo stays alive even if we erase from m_Plugins.
+  const auto plugin = m_Plugins.at(it->second);
 
   if (state == STATE_MISSING) {
     m_Plugins.erase(m_Plugins.begin() + it->second);
+    updateCache();  // rebuild m_PluginsByName / m_PluginsByPriority after the erase
   } else {
     const bool enabled      = plugin->enabled();
     const bool shouldEnable = (state == STATE_ACTIVE && !plugin->forceDisabled()) ||
@@ -1007,6 +1084,15 @@ const MOTools::Loot::Plugin* PluginList::getLootReport(const QString& name) cons
 
 void PluginList::writePluginLists() const
 {
+  // An empty list means the scan found nothing - the virtual file tree was not
+  // ready yet, or a refresh is still in flight. Writing now would replace the
+  // profile's plugins.txt, loadorder.txt and plugingroups.txt with empty files,
+  // which reads back as "every plugin disabled, every group empty".
+  if (m_Plugins.empty()) {
+    MOBase::log::warn("skipping plugin list write: the plugin list is empty");
+    return;
+  }
+
   const auto gameFeatures = m_Organizer->gameFeatures();
   const auto tesSupport = gameFeatures ? gameFeatures->gameFeature<MOBase::GamePlugins>() : nullptr;
   if (tesSupport) {
@@ -1049,10 +1135,9 @@ enum class Game
   Other
 };
 
-static bool isAssociatedArchive(TESData::FileInfo& info, const QString& candidate,
+static bool isAssociatedArchive(const QString& baseName, const QString& candidate,
                                 Game game)
 {
-  const QString baseName = QFileInfo(info.name()).completeBaseName();
   if (!candidate.startsWith(baseName, Qt::CaseInsensitive)) {
     return false;
   }
@@ -1085,8 +1170,10 @@ static bool isAssociatedArchive(TESData::FileInfo& info, const QString& candidat
   }
 }
 
-void PluginList::checkBsa(TESData::FileInfo& info,
-                          const std::shared_ptr<const MOBase::IFileTree>& fileTree)
+// archiveNames is the pre-collected list of .bsa/.ba2 files in the data tree;
+// scanning the whole tree per plugin made archive association O(plugins x files).
+void PluginList::checkBsa(TESData::FileInfo& info, const QStringList& archiveNames,
+                          bool associateArchives)
 {
   const auto managedGame = m_Organizer->managedGame();
   const auto gameName    = managedGame ? managedGame->gameName() : QString();
@@ -1097,15 +1184,12 @@ void PluginList::checkBsa(TESData::FileInfo& info,
                                                                  : Game::Other;
 
   const QString baseName = QFileInfo(info.name()).completeBaseName();
-  for (const auto entry : *fileTree) {
-    if (!entry) {
-      continue;
-    }
-
-    const auto candidate = entry->name();
-    if (isAssociatedArchive(info, candidate, game)) {
+  for (const auto& candidate : archiveNames) {
+    if (isAssociatedArchive(baseName, candidate, game)) {
       info.addArchive(candidate);
-      associateArchive(info, candidate);
+      if (associateArchives) {
+        associateArchive(info, candidate);
+      }
     }
   }
 }
@@ -1139,19 +1223,8 @@ static void assignConsecutivePriorities(std::vector<std::shared_ptr<FileInfo>>& 
 
 void PluginList::scanDataFiles(bool invalidate)
 {
-  if (invalidate) {
-    m_Plugins.clear();
-    m_PluginsByName.clear();
-    m_PluginsByPriority.clear();
-
-    m_EntriesByName.clear();
-    m_EntriesByHandle.clear();
-    m_NextHandle = 0;
-
-    m_MasterArchiveEntry = std::make_shared<AssociatedEntry>();
-    m_Archives.clear();
-  }
-
+  // The reset happens further down: whether this refresh has to widen into a
+  // full one is only known once the files on disk have been looked at.
   const auto managedGame = m_Organizer->managedGame();
 
   const QStringList primaryPlugins =
@@ -1167,9 +1240,31 @@ void PluginList::scanDataFiles(bool invalidate)
 
   const bool lightPluginsAreSupported =
       tesSupport && tesSupport->lightPluginsAreSupported();
-  const bool overridePluginsAreSupported = false;
+  const bool mediumPluginsAreSupported =
+      tesSupport && tesSupport->mediumPluginsAreSupported();
+  // Medium plugins, blueprint plugins, the overlay flag and the moved light
+  // flag all arrived together with Starfield and no other game has any of
+  // them, so one query answers for all four. MO2 makes the same deduction for
+  // the light flag in ESPInfo, which keeps the two lists in agreement.
+  //
+  // Do NOT call GamePlugins::blueprintPluginsAreSupported() here: it is a
+  // virtual that MO2 2.5.2 does not have. Its vtable stops one slot earlier,
+  // so the call lands on whatever follows the game plugin's vtable and takes
+  // MO2 down on startup.
+  const bool blueprintPluginsAreSupported = mediumPluginsAreSupported;
+  const bool overridePluginsAreSupported  = mediumPluginsAreSupported;
+
+  // Records and archive conflict trees are only needed for conflict management.
+  // When it is off, parse just the plugin headers - this is what keeps install
+  // and activation responsive on large load orders.
+  const bool conflictManagement =
+      Settings::instance()->enablePluginConflictManagement();
 
   QStringList availablePlugins;
+  QStringList archiveNames;
+  // resolvePath() is already paid for once per plugin below; keep the answer so
+  // the stale-file check does not have to ask a second time.
+  QHash<QString, QString> resolvedPaths;
 
   const auto tree = m_Organizer->virtualFileTree();
   for (const std::shared_ptr<const MOBase::FileTreeEntry> entry : *tree) {
@@ -1179,14 +1274,22 @@ void PluginList::scanDataFiles(bool invalidate)
 
     const QString filename = entry->name();
 
+    if (filename.endsWith(u".bsa"_s, Qt::CaseInsensitive) ||
+        filename.endsWith(u".ba2"_s, Qt::CaseInsensitive)) {
+      archiveNames.append(filename);
+      continue;
+    }
+
     if (!isPluginFile(filename)) {
       continue;
     }
 
-    if (m_Organizer->resolvePath(filename).isEmpty()) {
+    const QString resolved = m_Organizer->resolvePath(filename);
+    if (resolved.isEmpty()) {
       continue;
     }
 
+    resolvedPaths.insert(filename, resolved);
     availablePlugins.append(filename);
   }
 
@@ -1207,13 +1310,118 @@ void PluginList::scanDataFiles(bool invalidate)
 
 
 
-  const uint concurrency = std::max(2U, std::thread::hardware_concurrency());
-  std::counting_semaphore smph{concurrency};
+  struct PendingScan
+  {
+    std::shared_ptr<FileInfo> info;
+    std::wstring path;
+  };
+  std::vector<PendingScan> pendingScans;
 
-  std::vector<std::shared_future<void>> futures;
+  // One GetFileAttributesEx per plugin instead of a QFileInfo: this runs for
+  // every plugin on every refresh, and QFileInfo allocates a private object to
+  // reach the same two fields. Falls back to QFileInfo for the paths the plain
+  // Win32 call cannot open, long paths above MAX_PATH in particular.
+  const auto stampOf = [](const QString& path) -> std::pair<qint64, qint64> {
+    if (path.isEmpty()) {
+      return {-1, -1};
+    }
+
+    WIN32_FILE_ATTRIBUTE_DATA attributes{};
+    if (::GetFileAttributesExW(reinterpret_cast<const wchar_t*>(path.utf16()),
+                               GetFileExInfoStandard, &attributes)) {
+      const qint64 size = (static_cast<qint64>(attributes.nFileSizeHigh) << 32) |
+                          attributes.nFileSizeLow;
+      const qint64 time =
+          (static_cast<qint64>(attributes.ftLastWriteTime.dwHighDateTime) << 32) |
+          attributes.ftLastWriteTime.dwLowDateTime;
+      return {size, time};
+    }
+
+    const QFileInfo fileInfo{path};
+    if (!fileInfo.exists()) {
+      return {-1, -1};
+    }
+    return {fileInfo.size(), fileInfo.lastModified().toMSecsSinceEpoch()};
+  };
+
+  const auto pathOf = [&](const QString& filename) {
+    const auto it = resolvedPaths.constFind(filename);
+    return it != resolvedPaths.constEnd() ? it.value()
+                                          : m_Organizer->resolvePath(filename);
+  };
+
+  // One pass over the file system, reused by both loops below.
+  QHash<QString, std::pair<qint64, qint64>> stamps;
+  stamps.reserve(availablePlugins.size());
+
   for (const auto& filename : availablePlugins) {
-    if (!invalidate && m_PluginsByName.contains(filename)) {
+    const auto stamp = stampOf(pathOf(filename));
+    stamps.insert(filename, stamp);
+
+    if (invalidate) {
       continue;
+    }
+
+    const auto it = m_PluginsByName.find(filename);
+    if (it == m_PluginsByName.end()) {
+      continue;
+    }
+
+    const auto& existing = m_Plugins.at(it->second);
+    if (existing->fileStampMatches(pathOf(filename), stamp.first, stamp.second)) {
+      continue;
+    }
+
+    // This plugin no longer matches the file it was read from. Re-parsing it in
+    // place is only safe while it owns nothing in the shared conflict tree:
+    // records are shared objects, and the ones this plugin introduced are held
+    // by every plugin overriding them, so they cannot be dropped and rebuilt on
+    // their own. When there is such a tree, widen this refresh into a full one.
+    const auto entry = findEntryByName(filename.toStdString());
+    if (entry && entry->dataRoot() && !entry->dataRoot()->children.empty()) {
+      MOBase::log::debug(
+          "\"{}\" changed on disk and holds parsed records; rescanning everything",
+          filename.toStdString());
+      invalidate = true;
+    }
+  }
+
+  if (invalidate) {
+    m_Plugins.clear();
+    m_PluginsByName.clear();
+    m_PluginsByPriority.clear();
+
+    m_EntriesByName.clear();
+    m_EntriesByHandle.clear();
+    m_NextHandle = 0;
+
+    m_MasterArchiveEntry = std::make_shared<AssociatedEntry>();
+    m_Archives.clear();
+  }
+
+  for (const auto& filename : availablePlugins) {
+    const QString fullPath  = pathOf(filename);
+    const auto [size, time] = stamps.value(filename, {-1, -1});
+
+    if (!invalidate) {
+      if (const auto it = m_PluginsByName.find(filename);
+          it != m_PluginsByName.end()) {
+        // Taken by value: the loop appends to m_Plugins, which can reallocate.
+        const auto existing = m_Plugins.at(it->second);
+
+        if (existing->fileStampMatches(fullPath, size, time)) {
+          continue;
+        }
+
+        // Nothing of this plugin is in the conflict tree (the pre-pass above
+        // would have widened the refresh otherwise), so parse it again in
+        // place: its load order state stays put, only what came out of the
+        // file is replaced.
+        existing->resetForRescan();
+        existing->setFileStamp(fullPath, size, time);
+        pendingScans.push_back({existing, fullPath.toStdWString()});
+        continue;
+      }
     }
 
     const bool forceLoaded  = primaryPlugins.contains(filename, Qt::CaseInsensitive);
@@ -1222,43 +1430,70 @@ void PluginList::scanDataFiles(bool invalidate)
         !forceLoaded && !forceEnabled &&
         (loadOrderMechanism == MOBase::IPluginGame::LoadOrderMechanism::None);
 
-    const QString fullPath = m_Organizer->resolvePath(filename);
-
-    const auto& info = m_Plugins.emplace_back(
+    const auto info = m_Plugins.emplace_back(
         std::make_shared<FileInfo>(this, filename, forceLoaded, forceEnabled,
                                    forceDisabled, lightPluginsAreSupported));
 
-    auto assocTask = std::async([=, &smph] {
-      smph.acquire();
-      checkBsa(*info, tree);
-      checkIni(*info, tree);
-      smph.release();
-    });
+    info->setFileStamp(fullPath, size, time);
 
-    auto fileTask = std::async([=, this, &smph, path = fullPath.toStdWString()] {
-      smph.acquire();
-
-      try {
-        FileConflictParser handler{this, info.get(), lightPluginsAreSupported,
-                                   overridePluginsAreSupported};
-        TESFile::Reader<FileConflictParser> reader{};
-        reader.parse(std::filesystem::path(path), handler);
-      } catch (const std::exception& e) {
-        MOBase::log::error("Error parsing \"{}\": {}", path, e.what());
-      }
-
-      smph.release();
-    });
-
-    futures.push_back(assocTask.share());
-    futures.push_back(fileTask.share());
+    pendingScans.push_back({info, fullPath.toStdWString()});
   }
 
-  boost::wait_for_all(futures.begin(), futures.end());
+  if (!pendingScans.empty()) {
+    // A fixed pool of workers over an atomic cursor; one thread per plugin
+    // spends more time spawning threads than scanning on big load orders.
+    const std::size_t workerCount =
+        std::min<std::size_t>(std::max(2U, std::thread::hardware_concurrency()),
+                              pendingScans.size());
+    std::atomic<std::size_t> nextScan{0};
+
+    std::vector<std::future<void>> workers;
+    workers.reserve(workerCount);
+    for (std::size_t w = 0; w < workerCount; ++w) {
+      workers.push_back(std::async(std::launch::async, [&, this] {
+        for (;;) {
+          const std::size_t i = nextScan.fetch_add(1, std::memory_order_relaxed);
+          if (i >= pendingScans.size()) {
+            break;
+          }
+
+          const auto& scan = pendingScans[i];
+          checkBsa(*scan.info, archiveNames, conflictManagement);
+          checkIni(*scan.info, tree);
+
+          try {
+            FileConflictParser handler{this,
+                                       scan.info.get(),
+                                       lightPluginsAreSupported,
+                                       overridePluginsAreSupported,
+                                       mediumPluginsAreSupported,
+                                       blueprintPluginsAreSupported,
+                                       conflictManagement};
+            TESFile::Reader<FileConflictParser> reader{};
+            reader.parse(std::filesystem::path(scan.path), handler);
+          } catch (const std::exception& e) {
+            MOBase::log::error("Error parsing \"{}\": {}", scan.path, e.what());
+          }
+
+          scan.info->setRecordsParsed(conflictManagement);
+        }
+      }));
+    }
+
+    for (auto& worker : workers) {
+      worker.wait();
+    }
+  }
 
   if (!invalidate) {
+    QSet<QString> availableSet;
+    availableSet.reserve(availablePlugins.size());
+    for (const auto& filename : availablePlugins) {
+      availableSet.insert(filename.toLower());
+    }
+
     std::erase_if(m_Plugins, [&](auto&& plugin) {
-      return !plugin || !availablePlugins.contains(plugin->name(), Qt::CaseInsensitive);
+      return !plugin || !availableSet.contains(plugin->name().toLower());
     });
   }
 
@@ -1402,7 +1637,7 @@ void PluginList::writeEmptyTextFile(const QString& fileName) const
 
   file->resize(0);
   file->write("# This file was automatically generated by Mod Organizer.\r\n"_ba);
-  file.commit();
+  commitSafeFile(file);
 }
 
 void PluginList::writeGroups(const QString& fileName) const
@@ -1425,7 +1660,7 @@ void PluginList::writeGroups(const QString& fileName) const
     }
   }
 
-  file.commit();
+  commitSafeFile(file);
 }
 
 void PluginList::clearLockedOrder()
@@ -1451,8 +1686,24 @@ void PluginList::readLockedOrder(const QString& fileName)
       continue;
     }
 
-    if (const auto it = m_PluginsByName.find(line); it != m_PluginsByName.end()) {
-      m_Plugins.at(it->second)->setLockedOrder(true);
+    // MO2's format is "name|priority"; older versions of this plugin wrote
+    // bare names, which lock the plugin at its current position.
+    QString name       = line;
+    int lockedPriority = -1;
+    if (const auto sep = line.lastIndexOf(u'|'); sep > 0) {
+      bool ok;
+      const int parsed = line.mid(sep + 1).toInt(&ok);
+      if (ok) {
+        name           = line.left(sep);
+        lockedPriority = parsed;
+      }
+    }
+
+    if (const auto it = m_PluginsByName.find(name); it != m_PluginsByName.end()) {
+      const auto& plugin = m_Plugins.at(it->second);
+      plugin->setLockedOrder(true);
+      plugin->setLockedPriority(lockedPriority >= 0 ? lockedPriority
+                                                    : plugin->priority());
     }
   }
 
@@ -1470,11 +1721,15 @@ void PluginList::writeLockedOrder(const QString& fileName) const
        ++priority) {
     const auto& plugin = m_Plugins.at(m_PluginsByPriority[priority]);
     if (plugin->lockedOrder()) {
-      file->write((plugin->name() + u"\r\n"_s).toUtf8());
+      const int lockedPriority =
+          plugin->lockedPriority() >= 0 ? plugin->lockedPriority() : priority;
+      file->write((plugin->name() + u'|' + QString::number(lockedPriority) +
+                   u"\r\n"_s)
+                      .toUtf8());
     }
   }
 
-  file.commit();
+  commitSafeFile(file);
 }
 
 void PluginList::readNotes(const QString& fileName)
@@ -1538,7 +1793,7 @@ void PluginList::writeNotes(const QString& fileName) const
     }
   }
 
-  file.commit();
+  commitSafeFile(file);
 }
 
 static QString recordPersistentKey(const Record& record)
@@ -1613,10 +1868,19 @@ void PluginList::readIgnoredRecords(const QString& fileName)
       record->setIgnored(!key.isEmpty() && ignoredKeys.contains(key));
     });
   }
+
+  // In-memory state now mirrors the file.
+  m_IgnoredRecordsDirty = false;
 }
 
 void PluginList::writeIgnoredRecords(const QString& fileName) const
 {
+  // Rebuilding this file walks every record of every plugin; skip it unless a
+  // record's ignored state actually changed since the last read or write.
+  if (!m_IgnoredRecordsDirty) {
+    return;
+  }
+
   QSet<QString> ignoredKeys;
   for (const auto& [name, entry] : m_EntriesByName) {
     if (!entry) {
@@ -1646,7 +1910,8 @@ void PluginList::writeIgnoredRecords(const QString& fileName) const
     file->write((key + u"\r\n"_s).toUtf8());
   }
 
-  file.commit();
+  commitSafeFile(file);
+  m_IgnoredRecordsDirty = false;
 }
 
 void PluginList::lockPlugin(int id, bool locked)
@@ -1655,11 +1920,48 @@ void PluginList::lockPlugin(int id, bool locked)
     return;
   }
 
-  m_Plugins.at(id)->setLockedOrder(locked);
+  const auto& plugin = m_Plugins.at(id);
+  plugin->setLockedOrder(locked);
+  plugin->setLockedPriority(locked ? plugin->priority() : -1);
 
   if (const auto lockedFile = lockedOrderPath(); !lockedFile.isEmpty()) {
     writeLockedOrder(lockedFile);
   }
+}
+
+void PluginList::enforceLockedOrder()
+{
+  std::vector<int> lockedIds;
+  for (int i = 0; i < static_cast<int>(m_Plugins.size()); ++i) {
+    const auto& plugin = m_Plugins[i];
+    if (plugin->lockedOrder() && plugin->lockedPriority() >= 0 &&
+        plugin->priority() != plugin->lockedPriority()) {
+      lockedIds.push_back(i);
+    }
+  }
+
+  if (lockedIds.empty()) {
+    return;
+  }
+
+  std::ranges::sort(lockedIds, [this](int lhs, int rhs) {
+    return m_Plugins[lhs]->lockedPriority() < m_Plugins[rhs]->lockedPriority();
+  });
+
+  m_EnforcingLockedOrder = true;
+  for (const int id : lockedIds) {
+    const auto& plugin = m_Plugins[id];
+    const int target   = plugin->lockedPriority();
+    if (plugin->priority() == target) {
+      continue;
+    }
+
+    // moveToPriority takes an insertion point: one past the target when
+    // moving down the list.
+    const int destination = target > plugin->priority() ? target + 1 : target;
+    moveToPriority({id}, destination);
+  }
+  m_EnforcingLockedOrder = false;
 }
 
 void PluginList::queuePluginStateChange(const QString& pluginName, PluginStates state)
@@ -1697,11 +1999,55 @@ void PluginList::pluginStatesChanged(const QStringList& pluginNames,
   m_PluginStateChanged(infos);
 }
 
+bool PluginList::isLoadOrderValid() const
+{
+  // Verifies the constraint enforcePluginRelationships() applies, but in
+  // O(n * masters) instead of O(n^2). Conservative: any doubt returns false so
+  // the full reordering runs - it never reports a real violation as valid.
+  bool seenNonForceLoaded = false;
+  bool seenNonMaster      = false;
+
+  for (const int index : m_PluginsByPriority) {
+    const auto& plugin = m_Plugins.at(index);
+
+    // A force-loaded / master plugin must not sit after a regular one.
+    if (plugin->forceLoaded() && seenNonForceLoaded) {
+      return false;
+    }
+    if (plugin->isMasterFile() && seenNonMaster) {
+      return false;
+    }
+
+    if (!plugin->forceLoaded()) {
+      seenNonForceLoaded = true;
+    }
+    if (!plugin->isMasterFile()) {
+      seenNonMaster = true;
+    }
+
+    // Every listed master must load before this plugin.
+    for (const auto& master : plugin->masters()) {
+      const auto it = m_PluginsByName.find(master);
+      if (it != m_PluginsByName.end() &&
+          m_Plugins.at(it->second)->priority() > plugin->priority()) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 void PluginList::enforcePluginRelationships()
 {
   MOBase::TimeThis tt{"TESData::PluginList::enforcePluginRelationships"};
 
-  for (int i = 0; i < m_PluginsByPriority.size(); ++i) {
+  // The O(n^2) reordering below is only needed when the current order actually
+  // violates a constraint. Verifying that is O(n*masters), so a refresh that
+  // introduced no violation (a plain enable/disable) skips the expensive pass.
+  const bool needsReorder = !isLoadOrderValid();
+
+  for (int i = 0; needsReorder && i < m_PluginsByPriority.size(); ++i) {
     const int firstIndex    = m_PluginsByPriority[i];
     const auto& firstPlugin = m_Plugins.at(firstIndex);
 
@@ -1771,6 +2117,7 @@ void PluginList::computeCompileIndices()
 {
   int numNormal  = 0;
   int numESLs    = 0;
+  int numESHs    = 0;
   int numSkipped = 0;
 
     const auto gameFeatures = m_Organizer->gameFeatures();
@@ -1778,6 +2125,8 @@ void PluginList::computeCompileIndices()
 
   const bool lightPluginsAreSupported =
       tesSupport && tesSupport->lightPluginsAreSupported();
+  const bool mediumPluginsAreSupported =
+      tesSupport && tesSupport->mediumPluginsAreSupported();
 
   for (int priority = 0; priority < m_PluginsByPriority.size(); ++priority) {
     const int index   = m_PluginsByPriority[priority];
@@ -1796,6 +2145,15 @@ void PluginList::computeCompileIndices()
                            .arg(numESLs & 0xFFF, 3, 16, QChar(u'0'))
                            .toUpper());
       ++numESLs;
+    } else if (mediumPluginsAreSupported && plugin->isMediumFile()) {
+      // Starfield medium plugins occupy the FD space: 256 of them, each with
+      // its own 0xFFFF-record page. Same layout MO2 prints.
+      const int ESHpos = 0xFD + (numESHs >> 8);
+      plugin->setIndex((u"%1:%2"_s)
+                           .arg(ESHpos, 2, 16, QChar(u'0'))
+                           .arg(numESHs & 0xFF, 2, 16, QChar(u'0'))
+                           .toUpper());
+      ++numESHs;
     } else if (plugin->isOverlayFlagged()) {
       plugin->setIndex((u"XX"_s));
       ++numSkipped;

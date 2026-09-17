@@ -41,6 +41,19 @@ QList<QString> FlagIconDelegate::getIcons(const QModelIndex& index) const
     icons.append(":/bsplugins/feather");
   }
 
+  if (flags & FLAG_LIGHT_CAPABLE) {
+    icons.append(":/bsplugins/feather-capable");
+  }
+
+  if (flags & FLAG_MEDIUM) {
+    // Same icons MO2's own plugin list uses for the Starfield plugin types.
+    icons.append(":/MO/gui/run");
+  }
+
+  if (flags & FLAG_BLUEPRINT) {
+    icons.append(":/MO/gui/resources/go-down.png");
+  }
+
   if (flags & FLAG_OVERLAY) {
     icons.append(":/MO/gui/instance_switch");
   }

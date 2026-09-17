@@ -70,13 +70,15 @@ std::shared_ptr<Record> FileEntry::createRecord(const RecordPath& path,
   std::unique_lock lk{m_Mutex};
 
   if (!item->record) {
-    item->record = std::make_shared<Record>();
-    lk.unlock();
-
-    item->record->setIdentifier(path.identifier(), path.files());
-    item->record->addAlternative(m_Handle);
+    // Build the record fully before assigning it so another thread entering this
+    // branch after we release the lock cannot observe a partially-initialized state.
+    auto newRecord = std::make_shared<Record>();
+    newRecord->setIdentifier(path.identifier(), path.files());
+    newRecord->addAlternative(m_Handle);
+    item->record   = std::move(newRecord);
     item->name     = name;
     item->formType = formType;
+    m_CachedRecordCount.reset();
   }
 
   return item->record;
@@ -87,9 +89,17 @@ void FileEntry::addRecord(const RecordPath& path, const std::string& name,
 {
   record->addAlternative(m_Handle);
   const auto item = createHierarchy(path);
-  item->record    = record;
-  item->name      = name;
-  item->formType  = formType;
+
+  // createHierarchy() releases m_Mutex before returning; re-lock to publish the
+  // record fields so concurrent parser threads cannot observe a torn write.
+  std::unique_lock lk{m_Mutex};
+  const bool isNew = !item->record;
+  item->record     = std::move(record);
+  item->name       = name;
+  item->formType   = formType;
+  if (isNew) {
+    m_CachedRecordCount.reset();
+  }
 }
 
 void FileEntry::addChildGroup(const RecordPath& path)
@@ -99,6 +109,9 @@ void FileEntry::addChildGroup(const RecordPath& path)
 
     return;
   }
+
+  // m_Files and the tree item are shared with concurrent parser threads.
+  std::unique_lock lk{m_Mutex};
 
   TESFile::GroupData group = path.groups().back();
   if (group.hasParent()) {

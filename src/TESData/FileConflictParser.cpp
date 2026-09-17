@@ -11,15 +11,24 @@ namespace TESData
 {
 
 FileConflictParser::FileConflictParser(PluginList* pluginList, FileInfo* plugin,
-                                       bool lightSupported, bool overlaySupported)
+                                       bool lightSupported, bool overlaySupported,
+                                       bool mediumSupported, bool blueprintSupported,
+                                       bool parseRecords)
     : m_PluginList{pluginList}, m_Plugin{plugin}, m_LightSupported{lightSupported},
-      m_OverlaySupported{overlaySupported}
+      m_OverlaySupported{overlaySupported}, m_MediumSupported{mediumSupported},
+      m_BlueprintSupported{blueprintSupported}, m_ParseRecords{parseRecords}
 {
   m_PluginName = m_Plugin->name().toStdString();
 }
 
 bool FileConflictParser::Group(TESFile::GroupData group)
 {
+  // When records are not requested (conflict management off), skipping every
+  // group makes the reader read only the TES4 header (masters, flags, author).
+  if (!m_ParseRecords) {
+    return false;
+  }
+
   if (group.hasDirectParent()) {
 
 
@@ -65,6 +74,10 @@ bool FileConflictParser::Form(TESFile::FormData form)
           m_OverlaySupported ? (form.flags() & TESFile::RecordFlags::LightNew)
           : m_LightSupported ? (form.flags() & TESFile::RecordFlags::LightOld)
                              : false);
+      m_Plugin->setMediumFlagged(m_MediumSupported &&
+                                 (form.flags() & TESFile::RecordFlags::Medium));
+      m_Plugin->setBlueprintFlagged(
+          m_BlueprintSupported && (form.flags() & TESFile::RecordFlags::Blueprint));
       return true;
     } else {
       throw std::runtime_error("Unsupported header record");

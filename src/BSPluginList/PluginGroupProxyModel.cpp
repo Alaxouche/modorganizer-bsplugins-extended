@@ -16,7 +16,7 @@ PluginGroupProxyModel::PluginGroupProxyModel(MOBase::IOrganizer* organizer,
 
 void PluginGroupProxyModel::setSourceModel(QAbstractItemModel* sourceModel)
 {
-  emit beginResetModel();
+  beginResetModel();
 
   if (const auto oldSource = this->sourceModel()) {
     disconnect(oldSource, nullptr, this, nullptr);
@@ -37,9 +37,16 @@ void PluginGroupProxyModel::setSourceModel(QAbstractItemModel* sourceModel)
             &PluginGroupProxyModel::onSourceDataChanged, Qt::UniqueConnection);
 
     buildGroups();
+  } else {
+    // Detached (grouping disabled): drop every mapping so no code path can
+    // resolve a proxy index against a source model that is no longer there.
+    m_TopLevel.clear();
+    m_SourceMap.clear();
+    m_ProxyItems.clear();
+    m_ItemMap.clear();
   }
 
-  emit endResetModel();
+  endResetModel();
 }
 
 bool PluginGroupProxyModel::hasChildren(const QModelIndex& parent) const
@@ -48,6 +55,9 @@ bool PluginGroupProxyModel::hasChildren(const QModelIndex& parent) const
     return rowCount(parent) > 0;
   }
 
+  if (parent.internalId() >= m_ProxyItems.size()) {
+    return false;
+  }
   return m_ProxyItems.at(parent.internalId()).isGroup();
 }
 
@@ -56,6 +66,9 @@ int PluginGroupProxyModel::rowCount(const QModelIndex& parent) const
   if (!parent.isValid()) {
     return static_cast<int>(m_TopLevel.size());
   } else {
+    if (parent.internalId() >= m_ProxyItems.size()) {
+      return 0;
+    }
     const auto& item  = m_ProxyItems.at(parent.internalId());
     const auto& group = item.groupInfo;
     return group ? static_cast<int>(group->children.size()) : 0;
@@ -64,7 +77,8 @@ int PluginGroupProxyModel::rowCount(const QModelIndex& parent) const
 
 int PluginGroupProxyModel::columnCount([[maybe_unused]] const QModelIndex& parent) const
 {
-  return sourceModel()->columnCount();
+  const auto source = sourceModel();
+  return source ? source->columnCount() : 0;
 }
 
 QModelIndex PluginGroupProxyModel::index(int row, int column,
@@ -75,6 +89,9 @@ QModelIndex PluginGroupProxyModel::index(int row, int column,
   }
 
   if (parent.isValid()) {
+    if (parent.internalId() >= m_ProxyItems.size()) {
+      return QModelIndex();
+    }
     const auto& item = m_ProxyItems.at(parent.internalId());
     if (const auto& group = item.groupInfo) {
       if (row < group->children.size()) {
@@ -93,6 +110,9 @@ QModelIndex PluginGroupProxyModel::index(int row, int column,
 
 QModelIndex PluginGroupProxyModel::parent(const QModelIndex& index) const
 {
+  if (!index.isValid() || index.internalId() >= m_ProxyItems.size()) {
+    return QModelIndex();
+  }
   const auto& item    = m_ProxyItems.at(index.internalId());
   const auto parentId = item.parentId;
   if (parentId == NO_ID) {
@@ -125,23 +145,28 @@ QModelIndex PluginGroupProxyModel::mapFromSource(const QModelIndex& sourceIndex)
 
 QModelIndex PluginGroupProxyModel::mapToSource(const QModelIndex& proxyIndex) const
 {
-  if (!proxyIndex.isValid()) {
+  if (!proxyIndex.isValid() || proxyIndex.internalId() >= m_ProxyItems.size()) {
+    return QModelIndex();
+  }
+
+  const auto source = sourceModel();
+  if (!source) {
     return QModelIndex();
   }
 
   const auto& item = m_ProxyItems.at(proxyIndex.internalId());
-  return sourceModel()->index(item.sourceRow, proxyIndex.column());
+  return source->index(item.sourceRow, proxyIndex.column());
 }
 
 Qt::ItemFlags PluginGroupProxyModel::flags(const QModelIndex& index) const
 {
-  if (!index.isValid()) {
+  if (!index.isValid() || index.internalId() >= m_ProxyItems.size()) {
     return QAbstractProxyModel::flags(index);
   }
 
   const auto& item = m_ProxyItems.at(index.internalId());
   if (!item.isGroup()) {
-    if (item.isSourceItem()) {
+    if (item.isSourceItem() && sourceModel()) {
       return sourceModel()->flags(mapToSource(index)) | Qt::ItemNeverHasChildren;
     } else {
       return Qt::ItemNeverHasChildren;
@@ -187,6 +212,9 @@ static QVariant groupData(const QString& name, int column, int role)
 
 QVariant PluginGroupProxyModel::data(const QModelIndex& index, int role) const
 {
+  if (!index.isValid() || index.internalId() >= m_ProxyItems.size()) {
+    return QVariant();
+  }
   const auto& item = m_ProxyItems.at(index.internalId());
   if (item.isSourceItem()) {
     return sourceModel()->data(mapToSource(index), role);
@@ -215,6 +243,9 @@ QVariant PluginGroupProxyModel::data(const QModelIndex& index, int role) const
 bool PluginGroupProxyModel::setData(const QModelIndex& index, const QVariant& value,
                                     int role)
 {
+  if (!index.isValid() || index.internalId() >= m_ProxyItems.size()) {
+    return false;
+  }
   const auto& item = m_ProxyItems.at(index.internalId());
   if (item.isSourceItem()) {
     return sourceModel()->setData(mapToSource(index), value, role);
@@ -262,6 +293,9 @@ QColor PluginGroupProxyModel::groupColor(const QString& groupName) const
 
 QModelIndex PluginGroupProxyModel::buddy(const QModelIndex& index) const
 {
+  if (!index.isValid() || index.internalId() >= m_ProxyItems.size()) {
+    return index;
+  }
   const auto& item = m_ProxyItems.at(index.internalId());
   if (item.isSourceItem()) {
     return mapFromSource(sourceModel()->buddy(mapToSource(index)));
@@ -273,7 +307,8 @@ QModelIndex PluginGroupProxyModel::buddy(const QModelIndex& index) const
 QVariant PluginGroupProxyModel::headerData(int section, Qt::Orientation orientation,
                                            int role) const
 {
-  return sourceModel()->headerData(section, orientation, role);
+  const auto source = sourceModel();
+  return source ? source->headerData(section, orientation, role) : QVariant();
 }
 
 int PluginGroupProxyModel::mapLowerBoundToSourceRow(std::size_t id) const

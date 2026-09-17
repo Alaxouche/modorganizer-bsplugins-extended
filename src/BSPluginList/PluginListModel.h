@@ -73,6 +73,11 @@ public:
   [[nodiscard]] QStringList masterGroups() const;
   [[nodiscard]] QStringList regularGroups() const;
 
+  // Groups are identified by their name, so two separators sharing one name are
+  // one group: renaming either renames both. Callers that create or rename a
+  // group pass the requested name through this to keep names distinct.
+  [[nodiscard]] QString uniqueGroupName(const QString& desired) const;
+
 public slots:
   void refresh();
 

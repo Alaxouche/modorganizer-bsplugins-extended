@@ -89,6 +89,11 @@ struct RecordFlags
     LightNew  = 0x100,
     LightOld  = 0x200,
     Overlay   = 0x200,
+    // Starfield only: medium plugins live in the FD memory space (256 of them,
+    // 0xFFFF records each), blueprint plugins are forced to the end of the
+    // load order. Values match MO2's own esptk Record::EFlag.
+    Medium    = 0x400,
+    Blueprint = 0x800,
   };
 
   enum Flag : std::uint32_t

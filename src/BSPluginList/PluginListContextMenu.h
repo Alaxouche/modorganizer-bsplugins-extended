@@ -7,6 +7,11 @@
 #include <QMenu>
 #include <QModelIndex>
 
+namespace TESData
+{
+class PluginList;
+}
+
 namespace BSPluginList
 {
 
@@ -35,10 +40,12 @@ private:
   void addOriginActions(MOBase::IModList* modList, MOBase::IPluginList* pluginList);
 
   void sendSelectedToGroup();
+  void showEslCapabilityReport();
 
   QModelIndex m_Index;
   PluginListModel* m_Model;
   PluginListView* m_View;
+  TESData::PluginList* m_TESPluginList = nullptr;
   QModelIndexList m_ViewSelected;
   QModelIndexList m_ModelSelected;
   bool m_FilesSelected  = false;

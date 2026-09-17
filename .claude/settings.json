@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -c core.safecrlf=false diff src/TESData/PluginList.cpp src/TESData/PluginList.h)"
+    ]
+  }
+}

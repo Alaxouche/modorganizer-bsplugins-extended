@@ -29,7 +29,7 @@ TESData::RecordPath PluginRecordModel::getPath(const QModelIndex& index) const
 
   std::vector<const Item*> parents;
   const auto last = static_cast<const Item*>(index.internalPointer());
-  for (auto item = last; item->parent; item = item->parent) {
+  for (auto item = last; item && item->parent; item = item->parent) {
     parents.push_back(item);
   }
 
@@ -39,7 +39,7 @@ TESData::RecordPath PluginRecordModel::getPath(const QModelIndex& index) const
     }
   }
 
-  if (last->record) {
+  if (last && last->record) {
     if (last->group.has_value()) {
       path.pop();
     }
@@ -72,7 +72,7 @@ QModelIndex PluginRecordModel::parent(const QModelIndex& index) const
     return QModelIndex();
 
   const auto item = static_cast<const Item*>(index.internalPointer());
-  if (!item->parent || !item->parent->parent) {
+  if (!item || !item->parent || !item->parent->parent) {
     return QModelIndex();
   }
 
@@ -130,7 +130,12 @@ void PluginRecordModel::fetchMore(const QModelIndex& parent)
   QList<QString> names;
   if (parentItem->record) {
     for (const auto handle : parentItem->record->alternatives()) {
+      // Handles are only valid for the conflict tree that produced them; a
+      // refresh behind this dialog invalidates them. Skip the stale ones.
       const auto entry = m_PluginList->findEntryByHandle(handle);
+      if (!entry) {
+        continue;
+      }
       names.append(QString::fromStdString(entry->name()));
     }
   } else {
@@ -163,6 +168,9 @@ void PluginRecordModel::fetchMore(const QModelIndex& parent)
 QVariant PluginRecordModel::data(const QModelIndex& index, int role) const
 {
   const auto item = static_cast<const Item*>(index.internalPointer());
+  if (!item) {
+    return QVariant();
+  }
 
   switch (role) {
   case Qt::DisplayRole:

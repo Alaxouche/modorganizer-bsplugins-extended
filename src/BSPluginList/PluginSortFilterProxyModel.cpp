@@ -14,20 +14,13 @@ void PluginSortFilterProxyModel::hideForceEnabledFiles(bool doHide)
 
 bool PluginSortFilterProxyModel::filterMatchesPlugin(const QString& plugin) const
 {
-  if (m_CurrentFilter.isEmpty()) {
+  if (m_FilterTerms.isEmpty()) {
     return true;
   }
 
-  QString filterCopy = QString(m_CurrentFilter);
-  filterCopy.replace("||", ";").replace("OR", ";").replace("|", ";");
-
-  const auto ORList = QStringTokenizer(filterCopy, u';', Qt::SkipEmptyParts);
-
-  return std::ranges::any_of(ORList, [&plugin](auto&& ORSegment) {
-    const auto ANDkeywords = QStringTokenizer(ORSegment, u' ', Qt::SkipEmptyParts);
-
-    return std::ranges::all_of(ANDkeywords, [&plugin](auto&& currentKeyword) {
-      return plugin.contains(currentKeyword, Qt::CaseInsensitive);
+  return std::ranges::any_of(m_FilterTerms, [&plugin](const QStringList& andTerms) {
+    return std::ranges::all_of(andTerms, [&plugin](const QString& keyword) {
+      return plugin.contains(keyword, Qt::CaseInsensitive);
     });
   });
 }
@@ -116,6 +109,21 @@ bool PluginSortFilterProxyModel::lessThan(const QModelIndex& source_left,
 void PluginSortFilterProxyModel::updateFilter(const QString& filter)
 {
   m_CurrentFilter = filter;
+  m_FilterTerms.clear();
+
+  QString filterCopy = filter;
+  filterCopy.replace("||", ";").replace("OR", ";").replace("|", ";");
+
+  for (auto&& orSegment : QStringTokenizer(filterCopy, u';', Qt::SkipEmptyParts)) {
+    QStringList andTerms;
+    for (auto&& keyword : QStringTokenizer(orSegment, u' ', Qt::SkipEmptyParts)) {
+      andTerms.append(keyword.toString());
+    }
+    if (!andTerms.isEmpty()) {
+      m_FilterTerms.append(andTerms);
+    }
+  }
+
   invalidateRowsFilter();
 }
 

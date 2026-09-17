@@ -73,6 +73,27 @@ void PluginListView::setModel(QAbstractItemModel* model)
 
   QTreeView::setModel(model);
 
+  for (const auto& connection : m_ModelConnections) {
+    disconnect(connection);
+  }
+  m_ModelConnections.clear();
+  invalidateGroupColorCache();
+
+  if (model) {
+    // Group ids are indexes into the proxy's item table and are reused when it
+    // rebuilds, so anything that reshapes the rows must drop the cache.
+    const auto dropCache = [this]() {
+      invalidateGroupColorCache();
+    };
+    m_ModelConnections = {
+        connect(model, &QAbstractItemModel::modelReset, this, dropCache),
+        connect(model, &QAbstractItemModel::layoutChanged, this, dropCache),
+        connect(model, &QAbstractItemModel::rowsInserted, this, dropCache),
+        connect(model, &QAbstractItemModel::rowsRemoved, this, dropCache),
+        connect(model, &QAbstractItemModel::rowsMoved, this, dropCache),
+    };
+  }
+
   if (m_SelectionChangedConnection) {
     disconnect(m_SelectionChangedConnection);
   }
@@ -120,6 +141,11 @@ QColor PluginListView::markerColor(const QModelIndex& index) const
 
   const auto rowIndex = index.siblingAtColumn(0);
   if (model()->hasChildren(rowIndex) && !isExpanded(rowIndex)) {
+    const auto cached = m_GroupColorCache.constFind(rowIndex.internalId());
+    if (cached != m_GroupColorCache.constEnd()) {
+      return cached.value();
+    }
+
     std::vector<QColor> colors;
     for (int i = 0; i < model()->rowCount(rowIndex); ++i) {
       const auto childIndex = model()->index(i, index.column(), rowIndex);
@@ -130,6 +156,7 @@ QColor PluginListView::markerColor(const QModelIndex& index) const
     }
 
     if (colors.empty()) {
+      m_GroupColorCache.insert(rowIndex.internalId(), QColor());
       return QColor();
     }
 
@@ -141,8 +168,10 @@ QColor PluginListView::markerColor(const QModelIndex& index) const
       a += static_cast<unsigned int>(color.alpha());
     }
     const auto n = static_cast<unsigned int>(colors.size());
-    return QColor(static_cast<int>(r / n), static_cast<int>(g / n),
-                  static_cast<int>(b / n), static_cast<int>(a / n));
+    const QColor average{static_cast<int>(r / n), static_cast<int>(g / n),
+                         static_cast<int>(b / n), static_cast<int>(a / n)};
+    m_GroupColorCache.insert(rowIndex.internalId(), average);
+    return average;
   }
 
   return QColor();
@@ -192,6 +221,7 @@ static void visitRows(const QAbstractItemModel* model,
 
 void PluginListView::setHighlightedOrigins(const QStringList& origins)
 {
+  invalidateGroupColorCache();
   m_Markers.highlight.clear();
   visitRows(model(), [this, &origins](auto&& idx) {
     const auto origin = idx.data(PluginListModel::OriginRole).toString();
@@ -206,6 +236,7 @@ void PluginListView::setHighlightedOrigins(const QStringList& origins)
 
 void PluginListView::clearOverwriteMarkers()
 {
+  invalidateGroupColorCache();
   m_Markers.overriding.clear();
   m_Markers.overridden.clear();
   m_Markers.overwritingAux.clear();

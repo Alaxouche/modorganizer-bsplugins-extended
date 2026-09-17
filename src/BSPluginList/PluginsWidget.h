@@ -12,6 +12,7 @@
 #include <QWidget>
 
 class Ui_PluginsWidget;
+class QTimer;
 
 namespace BSPluginList
 {
@@ -113,7 +114,17 @@ private:
   bool m_IsRunningApp          = false;
   bool m_DeferPostLootRefresh  = false;
   bool m_ExternalStatesChanged = false;
+  bool m_ModStateRefreshPending = false;
+  bool m_RestoringExpandState   = false;
+  // The plugin info dialog holds raw pointers into the conflict tree, which a
+  // refresh tears down and rebuilds. Refreshes are held back while it is up.
+  bool m_PluginInfoOpen         = false;
+  bool m_RefreshDeferred        = false;
   int m_PendingScrollPosition  = -1;
+  QTimer* m_WriteTimer         = nullptr;
+  // "Expand all" emits one signal per group and each save walks the whole
+  // model; coalesce them into a single write.
+  QTimer* m_ExpandStateTimer   = nullptr;
   QMetaObject::Connection m_ViewSelectionChangedConnection;
 };
 

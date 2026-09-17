@@ -198,6 +198,10 @@ void PluginRecordView::on_pickRecordView_customContextMenuRequested(const QPoint
 
       for (const auto handle : item->record->alternatives()) {
         const auto entry = m_PluginList->findEntryByHandle(handle);
+        if (!entry) {
+          continue;
+        }
+
         const auto info =
             m_PluginList->getPluginByName(QString::fromStdString(entry->name()));
         if (info) {
@@ -206,7 +210,7 @@ void PluginRecordView::on_pickRecordView_customContextMenuRequested(const QPoint
       }
     }
 
-
+    m_PluginList->notifyIgnoredRecordsChanged();
     m_PluginList->writePluginLists();
   });
 

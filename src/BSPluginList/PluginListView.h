@@ -1,6 +1,9 @@
 #ifndef BSPLUGINLIST_PLUGINLISTVIEW_H
 #define BSPLUGINLIST_PLUGINLISTVIEW_H
 
+#include <QColor>
+#include <QHash>
+#include <QList>
 #include <QSet>
 #include <QMetaObject>
 #include <QTreeView>
@@ -66,10 +69,18 @@ private slots:
   void onGroupRenameRequested(const QModelIndex& index, const QString& name);
 
 private:
+  // markerColor() averages the colours of every child of a collapsed group.
+  // The delegate asks once per cell and the marking scroll bar once per row,
+  // so the same average is recomputed many times over between two changes.
+  // Keyed by proxy item id, dropped whenever the markers or the rows change.
+  void invalidateGroupColorCache() const { m_GroupColorCache.clear(); }
+
   bool m_FirstPaint = true;
   MarkerInfos m_Markers;
-  PluginListModel* m_PluginModel;
-  PluginSortFilterProxyModel* m_SortProxy;
+  mutable QHash<quintptr, QColor> m_GroupColorCache;
+  QList<QMetaObject::Connection> m_ModelConnections;
+  PluginListModel* m_PluginModel          = nullptr;
+  PluginSortFilterProxyModel* m_SortProxy = nullptr;
   QMetaObject::Connection m_SelectionChangedConnection;
 };
 

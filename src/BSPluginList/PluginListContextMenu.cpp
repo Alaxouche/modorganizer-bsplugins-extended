@@ -5,9 +5,11 @@
 #include "PluginListModel.h"
 #include "PluginListView.h"
 #include "TESData/FileInfo.h"
+#include "TESData/PluginList.h"
 
 #include <utility.h>
 
+#include <QApplication>
 #include <QColorDialog>
 #include <QInputDialog>
 #include <QMessageBox>
@@ -36,7 +38,8 @@ PluginListContextMenu::PluginListContextMenu(const QModelIndex& index,
                                              PluginListView* view,
                                              MOBase::IModList* modList,
                                              MOBase::IPluginList* pluginList)
-    : QMenu(view), m_Index{index}, m_Model{model}, m_View{view}
+    : QMenu(view), m_Index{index}, m_Model{model}, m_View{view},
+      m_TESPluginList{dynamic_cast<TESData::PluginList*>(pluginList)}
 {
   m_ViewSelected = view->selectionModel()->selectedRows();
   if (!m_ViewSelected.isEmpty()) {
@@ -152,6 +155,12 @@ void PluginListContextMenu::addSelectedFilesActions()
     });
   }
 
+  if (m_TESPluginList) {
+    addAction(tr("ESL Capability Report..."), [this]() {
+      showEslCapabilityReport();
+    });
+  }
+
   addSeparator();
 
   if (m_FilesSelected && m_ModelSelected.length() == 1) {
@@ -209,40 +218,58 @@ void PluginListContextMenu::addSelectedGroupActions()
   if (m_ViewSelected.length() == 1) {
     const auto selectedIndex = m_ViewSelected.first();
     const bool expanded      = m_View->isExpanded(selectedIndex);
-    const QString groupName  = selectedIndex.data(Qt::DisplayRole).toString();
 
     addAction(tr("Collapse others"), [=, this]() {
       m_View->collapseAll();
       m_View->setExpanded(selectedIndex, expanded);
       m_View->scrollTo(selectedIndex);
     });
-
-    addSeparator();
-
-    addAction(tr("Set Group Color..."), [=, this]() {
-      auto* const groupProxy =
-          qobject_cast<PluginGroupProxyModel*>(m_View->model());
-      if (!groupProxy)
-        return;
-
-      const QColor current = groupProxy->groupColor(groupName);
-      QColorDialog dlg(current.isValid() ? current : Qt::white,
-                       m_View->topLevelWidget());
-      dlg.setWindowTitle(tr("Set Group Color: ") + groupName);
-      dlg.setOption(QColorDialog::ShowAlphaChannel);
-      if (dlg.exec() == QDialog::Accepted) {
-        groupProxy->setGroupColor(groupName, dlg.selectedColor());
-      }
-    });
-
-    addAction(tr("Clear Group Color"), [=, this]() {
-      auto* const groupProxy =
-          qobject_cast<PluginGroupProxyModel*>(m_View->model());
-      if (groupProxy) {
-        groupProxy->setGroupColor(groupName, QColor());
-      }
-    });
   }
+
+  addSeparator();
+
+  QStringList groupNames;
+  groupNames.reserve(m_ViewSelected.length());
+  for (const auto& idx : m_ViewSelected) {
+    groupNames.append(idx.data(Qt::DisplayRole).toString());
+  }
+
+  addAction(groupNames.length() == 1 ? tr("Set Group Color...")
+                                     : tr("Set Color of %1 Groups...")
+                                           .arg(groupNames.length()),
+            [groupNames, this]() {
+              auto* const groupProxy =
+                  qobject_cast<PluginGroupProxyModel*>(m_View->model());
+              if (!groupProxy)
+                return;
+
+              const QColor current = groupProxy->groupColor(groupNames.first());
+              QColorDialog dlg(current.isValid() ? current : Qt::white,
+                               m_View->topLevelWidget());
+              dlg.setWindowTitle(
+                  groupNames.length() == 1
+                      ? tr("Set Group Color: ") + groupNames.first()
+                      : tr("Set Color of %1 Groups").arg(groupNames.length()));
+              dlg.setOption(QColorDialog::ShowAlphaChannel);
+              if (dlg.exec() == QDialog::Accepted) {
+                for (const auto& groupName : groupNames) {
+                  groupProxy->setGroupColor(groupName, dlg.selectedColor());
+                }
+              }
+            });
+
+  addAction(groupNames.length() == 1 ? tr("Clear Group Color")
+                                     : tr("Clear Color of %1 Groups")
+                                           .arg(groupNames.length()),
+            [groupNames, this]() {
+              auto* const groupProxy =
+                  qobject_cast<PluginGroupProxyModel*>(m_View->model());
+              if (groupProxy) {
+                for (const auto& groupName : groupNames) {
+                  groupProxy->setGroupColor(groupName, QColor());
+                }
+              }
+            });
 }
 
 void PluginListContextMenu::addSelectionActions()
@@ -259,12 +286,16 @@ void PluginListContextMenu::addSelectionActions()
   if (m_FilesSelected && Settings::instance()->enablePluginGrouping()) {
     addAction(tr("Create Group..."), [this]() {
       bool ok;
-      const QString group =
+      const QString requested =
           QInputDialog::getText(m_View->topLevelWidget(), tr("Create Group..."),
                                 tr("Please enter a name:"), QLineEdit::Normal, "", &ok);
 
-      if (!ok || group.isEmpty())
+      if (!ok || requested.isEmpty())
         return;
+
+      // Reusing an existing name would produce a second separator bound to the
+      // same group, so renaming one would rename both.
+      const QString group = m_Model->uniqueGroupName(requested);
 
       QList<QPersistentModelIndex> persistent;
       persistent.reserve(m_ViewSelected.length());
@@ -292,14 +323,14 @@ void PluginListContextMenu::addSelectionActions()
         const auto oldGroup  = selected.data().toString();
 
         bool ok;
-        const QString group = QInputDialog::getText(
+        const QString requested = QInputDialog::getText(
             m_View->topLevelWidget(), tr("Rename Group..."), tr("Please enter a name:"),
-            QLineEdit::Normal, "", &ok);
+            QLineEdit::Normal, oldGroup, &ok);
 
-        if (!ok || group.isEmpty())
+        if (!ok || requested.isEmpty() || requested == oldGroup)
           return;
 
-        m_Model->renameGroup(oldGroup, group);
+        m_Model->renameGroup(oldGroup, m_Model->uniqueGroupName(requested));
       });
 
       addAction(tr("Merge Group Into..."), [this, selectedGroup]() {
@@ -424,6 +455,73 @@ void PluginListContextMenu::addOriginActions(MOBase::IModList* modList,
         });
     setDefaultAction(pluginInfoAction);
   }
+}
+
+void PluginListContextMenu::showEslCapabilityReport()
+{
+  if (!m_TESPluginList) {
+    return;
+  }
+
+  QStringList lines;
+
+  QApplication::setOverrideCursor(Qt::WaitCursor);
+  for (const auto& idx : m_ModelSelected) {
+    const int id = idx.data(PluginListModel::IndexRole).toInt();
+    const auto* plugin = m_TESPluginList->getPlugin(id);
+    if (!plugin) {
+      continue;
+    }
+
+    if (plugin->isSmallFile()) {
+      lines.append(tr("%1 — already a light plugin.").arg(plugin->name()));
+      continue;
+    }
+
+    // Header-only scans have no record data; parse this plugin on demand.
+    if (!plugin->recordsParsed()) {
+      m_TESPluginList->parsePluginRecords(id);
+    }
+
+    switch (plugin->lightCapability()) {
+    case TESData::FileInfo::LightCapability::Capable:
+      lines.append(tr("%1 — ESL capable, no compacting needed (%2 new records).")
+                       .arg(plugin->name())
+                       .arg(plugin->newRecordCount()));
+      break;
+    case TESData::FileInfo::LightCapability::CapableWithCompacting:
+      lines.append(tr("%1 — ESL capable after compacting FormIDs in xEdit "
+                      "(%2 new records).")
+                       .arg(plugin->name())
+                       .arg(plugin->newRecordCount()));
+      break;
+    case TESData::FileInfo::LightCapability::NotCapable:
+      lines.append(tr("%1 — not ESL capable: %2 new records exceed the 2048 "
+                      "slots of the ESL range.")
+                       .arg(plugin->name())
+                       .arg(plugin->newRecordCount()));
+      break;
+    case TESData::FileInfo::LightCapability::Unknown:
+      lines.append(tr("%1 — no record data available.").arg(plugin->name()));
+      break;
+    }
+  }
+  QApplication::restoreOverrideCursor();
+
+  if (lines.isEmpty()) {
+    return;
+  }
+
+  QMessageBox box{m_View->topLevelWidget()};
+  box.setWindowTitle(tr("ESL Capability Report"));
+  box.setIcon(QMessageBox::Information);
+  box.setText(tr("Flagging a plugin as ESL frees a load order slot. Plugins "
+                 "listed as \"capable\" can take the flag in xEdit; compacting "
+                 "FormIDs first is required where noted (and invalidates "
+                 "existing save games referencing those FormIDs)."));
+  box.setDetailedText(lines.join(QStringLiteral("\n\n")));
+  box.setStandardButtons(QMessageBox::Ok);
+  box.exec();
 }
 
 void PluginListContextMenu::sendSelectedToGroup()

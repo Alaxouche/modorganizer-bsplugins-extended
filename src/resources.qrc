@@ -3,6 +3,9 @@
         <file alias="feather">resources/feather.png</file>
     </qresource>
     <qresource prefix="/bsplugins">
+        <file alias="feather-capable">resources/feather-capable.png</file>
+    </qresource>
+    <qresource prefix="/bsplugins">
         <file alias="star">resources/emblem-star.png</file>
     </qresource>
 </RCC>

@@ -64,6 +64,10 @@ void MOPanelInterface::setSelectedFiles(const QList<QString>& selectedFiles)
 
 void MOPanelInterface::displayOriginInformation(const QString& file)
 {
+  if (!m_PluginListView) {
+    return;
+  }
+
   const auto model = m_PluginListView->model();
   for (int row = 0, count = model->rowCount(); row < count; ++row) {
     const auto index = model->index(row, 0);
@@ -97,6 +101,10 @@ bool MOPanelInterface::onSelectedOriginsChanged(
 
 void MOPanelInterface::setPluginState(const QString& name, bool enable)
 {
+  if (!m_PluginListView) {
+    return;
+  }
+
   const auto model = m_PluginListView->model();
   for (int i = 0, count = model->rowCount(); i < count; ++i) {
     const auto index = model->index(i, 0);

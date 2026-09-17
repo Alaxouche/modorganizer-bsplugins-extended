@@ -20,10 +20,14 @@ QString BSPlugins::name() const
 std::vector<std::shared_ptr<const MOBase::IPluginRequirement>>
 BSPlugins::requirements() const
 {
+  // "TTW" is what MO2's game_ttw plugin (GameFalloutTTW) reports; without it the
+  // panel stays disabled on a Tale of Two Wastelands instance even though the
+  // engine is the same as New Vegas.
   return {Requirements::gameDependency(
-      {u"Oblivion"_s, u"Fallout 3"_s, u"New Vegas"_s, u"Skyrim"_s, u"Enderal"_s,
-       u"Fallout 4"_s, u"Skyrim Special Edition"_s, u"Enderal Special Edition"_s,
-       u"Skyrim VR"_s, u"Fallout 4 VR"_s, u"Starfield"_s})};
+      {u"Oblivion"_s, u"Fallout 3"_s, u"New Vegas"_s, u"TTW"_s, u"Skyrim"_s,
+       u"Enderal"_s, u"Fallout 4"_s, u"Skyrim Special Edition"_s,
+       u"Enderal Special Edition"_s, u"Skyrim VR"_s, u"Fallout 4 VR"_s,
+       u"Starfield"_s})};
 }
 
 QString BSPlugins::author() const
@@ -76,7 +80,7 @@ QList<MOBase::PluginSetting> BSPlugins::settings() const
        u"Double-click a plugin opens Plugin Info (default: opens mod information)"_s,
        true},
       {u"enable_cell_conflict_detection"_s,
-       u"Conflicts: check REFR/ACHR records inside CELL and WRLD groups (slow on large load orders, requires refresh)"_s,
+       u"Conflicts: check records placed inside CELL and WRLD groups, e.g. REFR/ACHR (slow on large load orders; edits to the CELL/WRLD records themselves are always detected)"_s,
        false},
   };
 }

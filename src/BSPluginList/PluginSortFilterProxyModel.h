@@ -1,7 +1,9 @@
 #ifndef BSPLUGINLIST_PLUGINSORTFILTERPROXYMODEL_H
 #define BSPLUGINLIST_PLUGINSORTFILTERPROXYMODEL_H
 
+#include <QList>
 #include <QSortFilterProxyModel>
+#include <QStringList>
 
 namespace BSPluginList
 {
@@ -33,6 +35,10 @@ public slots:
 
 private:
   QString m_CurrentFilter;
+  // The filter text tokenized once, as a list of OR alternatives each holding
+  // the AND keywords it requires. filterAcceptsRow() runs per row on every
+  // change, so the splitting must not happen there.
+  QList<QStringList> m_FilterTerms;
   bool m_HideForceEnabledFiles = false;
 };
 

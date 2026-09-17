@@ -10,7 +10,7 @@
       "cacheVariables": {
         "CMAKE_GENERATOR_INSTANCE": {
           "type": "STRING",
-          "value": "D:/Code/tools/BuildTools,version=17.14.37012.4"
+          "value": "D:/Code/tools/BuildTools"
         },
         "CMAKE_BUILD_TYPE": {
           "type": "STRING",
@@ -30,11 +30,11 @@
         },
         "BOOST_ROOT": {
           "type": "PATH",
-          "value": "D:/Code/tools/vcpkg-manifest-boost/vcpkg_installed/x64-windows"
+          "value": "D:/Code/tools/vcpkg-manifest-boost-static/vcpkg_installed/x64-windows-static-md"
         },
         "BOOST_LIBRARYDIR": {
           "type": "PATH",
-          "value": "D:/Code/tools/vcpkg-manifest-boost/vcpkg_installed/x64-windows/lib"
+          "value": "D:/Code/tools/vcpkg-manifest-boost-static/vcpkg_installed/x64-windows-static-md/lib"
         },
         "FMT_ROOT": {
           "type": "PATH",
@@ -50,7 +50,7 @@
         },
         "LZ4_ROOT": {
           "type": "PATH",
-          "value": "D:/Code/tools/vcpkg-manifest-boost/vcpkg_installed/x64-windows"
+          "value": "D:/Code/vcpkg/installed/x64-windows-static-md"
         },
         "QT_ROOT": {
           "type": "PATH",
@@ -75,6 +75,10 @@
         "GTEST_ROOT": {
           "type": "PATH",
           "value": "D:/Code/tools/googletest"
+        },
+        "Boost_DIR": {
+          "type": "PATH",
+          "value": "D:/Code/tools/vcpkg-manifest-boost-static/vcpkg_installed/x64-windows-static-md/share/boost"
         }
       }
     }
