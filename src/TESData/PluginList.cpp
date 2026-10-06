@@ -19,6 +19,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QSet>
 #include <QStringTokenizer>
 #include <QTextStream>
 #include <QUrl>
@@ -855,6 +856,16 @@ void PluginList::setState(const QString& name, PluginStates state)
 {
   const auto it = m_PluginsByName.find(name);
   if (it == m_PluginsByName.end()) {
+    // A name we do not carry. Harmless when the file is gone too - that is just
+    // a stale plugins.txt line. But a plugin that IS on disk and is being
+    // activated means the scan missed it, and writing our list back would undo
+    // that activation, so refuse to write until a refresh picks it up.
+    if (state == STATE_ACTIVE && !m_Organizer->resolvePath(name).isEmpty()) {
+      MOBase::log::warn("\"{}\" is active on disk but missing from the plugin "
+                        "list; not writing the plugin lists until it is picked up",
+                        name.toStdString());
+      m_DroppedActivation = true;
+    }
     return;
   }
 
@@ -1093,6 +1104,12 @@ void PluginList::writePluginLists() const
     return;
   }
 
+  if (m_DroppedActivation) {
+    MOBase::log::warn("skipping plugin list write: the plugin list does not "
+                      "account for every active plugin on disk");
+    return;
+  }
+
   const auto gameFeatures = m_Organizer->gameFeatures();
   const auto tesSupport = gameFeatures ? gameFeatures->gameFeature<MOBase::GamePlugins>() : nullptr;
   if (tesSupport) {
@@ -1261,6 +1278,9 @@ void PluginList::scanDataFiles(bool invalidate)
       Settings::instance()->enablePluginConflictManagement();
 
   QStringList availablePlugins;
+  // Lower-cased mirror of availablePlugins: the membership tests below used to
+  // be linear scans of the list, which is quadratic on a big load order.
+  QSet<QString> availableLower;
   QStringList archiveNames;
   // resolvePath() is already paid for once per plugin below; keep the answer so
   // the stale-file check does not have to ask a second time.
@@ -1291,6 +1311,35 @@ void PluginList::scanDataFiles(bool invalidate)
 
     resolvedPaths.insert(filename, resolved);
     availablePlugins.append(filename);
+    availableLower.insert(filename.toLower());
+  }
+
+  // MO2 only invalidates IOrganizer::virtualFileTree() at the end of a FULL
+  // refresh (OrganizerCore::directory_refreshed). Toggling or installing a mod
+  // goes through updateModsInDirectoryStructure(), which mutates the directory
+  // structure in place and leaves the cached tree behind - so the walk above
+  // can miss a plugin that just appeared. MO2's own plugin list is refreshed in
+  // place on that same path, and resolvePath() reads the live structure, so
+  // union them in. Without this the new plugin is absent from the list, the
+  // activation MO2 wrote to plugins.txt is dropped by setState(), and our next
+  // write silently deactivates it again.
+  if (const auto* const corePluginList = m_Organizer->pluginList();
+      corePluginList != nullptr &&
+      corePluginList != static_cast<const MOBase::IPluginList*>(this)) {
+    for (const QString& filename : corePluginList->pluginNames()) {
+      if (!isPluginFile(filename) || availableLower.contains(filename.toLower())) {
+        continue;
+      }
+
+      const QString resolved = m_Organizer->resolvePath(filename);
+      if (resolved.isEmpty()) {
+        continue;
+      }
+
+      resolvedPaths.insert(filename, resolved);
+      availablePlugins.append(filename);
+      availableLower.insert(filename.toLower());
+    }
   }
 
   for (const auto& modName : m_PendingActive) {
@@ -1302,8 +1351,9 @@ void PluginList::scanDataFiles(bool invalidate)
 
     for (auto&& entry : *fileTree) {
       if (entry && isPluginFile(entry->name()) &&
-          !availablePlugins.contains(entry->name(), Qt::CaseInsensitive)) {
+          !availableLower.contains(entry->name().toLower())) {
         availablePlugins.append(entry->name());
+        availableLower.insert(entry->name().toLower());
       }
     }
   }
@@ -1486,14 +1536,8 @@ void PluginList::scanDataFiles(bool invalidate)
   }
 
   if (!invalidate) {
-    QSet<QString> availableSet;
-    availableSet.reserve(availablePlugins.size());
-    for (const auto& filename : availablePlugins) {
-      availableSet.insert(filename.toLower());
-    }
-
     std::erase_if(m_Plugins, [&](auto&& plugin) {
-      return !plugin || !availableSet.contains(plugin->name().toLower());
+      return !plugin || !availableLower.contains(plugin->name().toLower());
     });
   }
 
@@ -1503,6 +1547,8 @@ void PluginList::scanDataFiles(bool invalidate)
 
 void PluginList::readPluginLists()
 {
+  m_DroppedActivation = false;
+
   const auto gameFeatures = m_Organizer->gameFeatures();
   const auto tesSupport = gameFeatures ? gameFeatures->gameFeature<MOBase::GamePlugins>() : nullptr;
 

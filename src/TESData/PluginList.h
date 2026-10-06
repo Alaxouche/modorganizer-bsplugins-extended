@@ -227,6 +227,11 @@ private:
   std::map<QString, PluginStates> m_QueuedStateChanges;
   std::set<QString> m_PendingActive;
 
+  // Set when plugins.txt activated a plugin that exists on disk but is missing
+  // from this list. Our view is then known to be incomplete, and writing it
+  // back would drop that activation, so writePluginLists() stands down.
+  bool m_DroppedActivation = false;
+
   SignalRefreshed m_Refreshed;
   SignalPluginMoved m_PluginMoved;
   SignalPluginStateChanged m_PluginStateChanged;
